@@ -19,7 +19,7 @@ t = 0
 
 fig = plt.figure(figsize = (12, 10))
 ax = fig.add_subplot(projection='3d', elev = 90)
-ax.set_box_aspect(None, zoom = 3)
+ax.set_box_aspect(None, zoom = 1.5)
 ax.axis('off')
 
 def update(num, data, line):
