@@ -2,3 +2,5 @@
 *.pyc
 *.gif
 /test_figs/*
+/animations/*
+evolve-tube-grid.py

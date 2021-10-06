@@ -60,7 +60,7 @@ def init_sphere(n, R = None):
 
     return x, p, q
 
-def init_tube(n, R = None, L = None):
+def init_tube(n, R = None, L = None, comb_direction = None):
     """
     Initializes a tube of radius R and length L.
     If either L or R is not specified, it is set so that each cell has a unit area on the tube.
@@ -77,6 +77,9 @@ def init_tube(n, R = None, L = None):
         Radius of the tube. Default: set so that each cell has a unit area on average
     L : float, optional
         Length of the tube. Default: 10*R
+    comb_direction : str or None, optional
+        direction in which to align q vectors, either along or around the tube.
+        If None (default), leave q as random
 
     Returns
     ----------
@@ -105,12 +108,15 @@ def init_tube(n, R = None, L = None):
     p = x.copy() / R
     p[:,2] = 0
 
-    # make PCP random
-    q = 2*np.random.rand(n, 3) - 1
+    # initialize PCP at random
+    q = 2*np.random.rand(*x.shape) - 1
 
-    return x, p, q
+    if comb_direction is not None:
+        return comb_tube(x, p, q, direction = comb_direction)
+    else:
+        return x, p, q
 
-def init_tube_grid(n, R = None, L = None):
+def init_tube_grid(n, R = None, L = None, comb_direction = None):
     """
     Initializes a system with cells arranged on a tube, placed deterministically to be evenly spaced (i.e. on a grid)
     I'm doing this lazily so it may not end up with exactly n cells. Sorry.
@@ -123,6 +129,9 @@ def init_tube_grid(n, R = None, L = None):
         Radius of the tube. Default: set so that each cell has a unit area on average
     L : float, optional
         Length of the tube. Default: 10*R
+    comb_direction : str or None, optional
+        direction in which to align q vectors, either along or around the tube.
+        If None (default), leave q as random
 
     Returns
     ----------
@@ -143,7 +152,7 @@ def init_tube_grid(n, R = None, L = None):
 
     # generate distance along the tube and angle around the tube evenly spaced
     l = 0.5 + np.arange(-L/2, L/2)
-    phi = 2*np.pi*np.linspace(0, 1, int(n/L))
+    phi = 2*np.pi*np.linspace(0, 1, int(n/L), endpoint = False)
 
     # combine into 3D coordinates
     x = np.empty((len(l)*len(phi), 3), dtype = float)
@@ -158,7 +167,45 @@ def init_tube_grid(n, R = None, L = None):
     p = x.copy() / R
     p[:,2] = 0
 
-    # make PCP random
+    # initialize PCP, either around the tube or at random
     q = 2*np.random.rand(*x.shape) - 1
 
+    if comb_direction is not None:
+        return comb_tube(x, p, q, direction = comb_direction)
+    else:
+        return x, p, q
+
+def comb_tube(x, p, q, direction = 'around'):
+    """
+    align the PCP vectors (q) to point around the tube on which cells are positioned (x).
+
+    This function assumes that:
+        x.shape = (n, 3) and each x[i,:] lies on a tube centered on the z-axis
+        p[:, :2] = x[:, :2] and p[:, 2] = 0
+
+    Parameters:
+    ----------
+    x : np.ndarray
+        Position of each cell in 3D space
+    p : np.ndarray
+        AB polarity vector of each cell
+    q : np.ndarray
+        PCP vector of each cell
+
+    Returns
+    ----------
+    x : np.ndarray
+        Position of each cell in 3D space
+    p : np.ndarray
+        AB polarity vector of each cell
+    q : np.ndarray
+        PCP vector of each cell
+    """
+    if direction == 'around':
+        q = np.vstack((p[:,1], -p[:,0], p[:,2])).T
+    elif direction == 'along':
+        q = np.zeros_like(q)
+        q[:, 2] = 1
+    else:
+        raise NotImplementedError('direction must be either \'around\' or \'along\'')
     return x, p, q

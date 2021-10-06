@@ -15,24 +15,22 @@ import torch
 save_name = 'tube-test'
 
 # Initialize a random system
-n = 500
+n = int(input('n = ? '))
 x, p, q = init_tube(n)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
-lam = np.array([1.0, 0.0, 0.0, 0.0])
+lam = np.array([0.0, 1.0, 1.0, 0.0])
 eta = 1e-5  # noise
 
 # Make one cell polar and divide it faster
-"""
 index = np.argmin(np.sum(x**2, axis=1))
 lam = np.repeat(lam[None, :], len(x), axis=0)
-lam[index, :] = (0, 1, 0, 0)
+lam[index, :] = (0, 1, 1, 0)
 beta[index] = 0.0025
-"""
 
 # Simulation parameters
-timesteps = 100
-yield_every = 1  # save simulation state every x time steps
+timesteps = 500
+yield_every = 50  # save simulation state every x time steps
 
 
 # Potential

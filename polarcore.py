@@ -101,7 +101,7 @@ class Polar:
         z_mask = torch.cat(z_masks, dim=0)
         return z_mask
 
-    def potential(self, x, p, q, idx, d, lam, potential):
+    def potential(self, x, p, q, idx, d, lam, potential, **kwargs):
         """
         Computes the potential energy of the system
         
@@ -121,7 +121,9 @@ class Polar:
             array of weights for the terms that make up the potential
         potential : callable
             function that computes the value of the potential between two cells, i and j
-            call signature (x, d, dx, lam_i, lam_j, pi, pj, qi, qj)
+            call signature (x, d, dx, lam_i, lam_j, pi, pj, qi, qj, **kwargs)
+        kwargs : dict
+            keyword arguments, passed to the potential function
         
         Returns
         ----------
@@ -162,12 +164,12 @@ class Polar:
         lam_i = lam[:, None, :].expand(p.shape[0], idx.shape[1], lam.shape[1])
         lam_j = lam[idx]
 
-        Vij = potential(x, d, dx, lam_i, lam_j, pi, pj, qi, qj)
+        Vij = potential(x, d, dx, lam_i, lam_j, pi, pj, qi, qj, **kwargs)
         V = torch.sum(z_mask.float() * Vij)
 
         return V, int(m)
 
-    def init_simulation(self, dt, lam, p, q, x, beta):
+    def init_simulation(self, dt, lam, p, q, x, beta, **kwargs):
         """
         Checks input dimensions, cleans and converts into torch.Tensor types
 
@@ -185,6 +187,8 @@ class Polar:
             Position of each cell in 3D space
         beta : array_like
             for each cell, probability of division per unit time
+        kwargs : dict
+            keyword arguments
 
         Returns
         ----------
@@ -249,7 +253,7 @@ class Polar:
         self.k = k
         return k, n_update
 
-    def time_step(self, dt, eta, lam, beta, p, q, sqrt_dt, tstep, x, potential):
+    def time_step(self, dt, eta, lam, beta, p, q, sqrt_dt, tstep, x, potential, **kwargs):
         """
         Move the simulation forward by one time step
 
@@ -275,7 +279,9 @@ class Polar:
             Position of each cell in 3D space
         potential : callable
             function that computes the value of the potential between two cells, i and j
-            call signature (x, d, dx, lam_i, lam_j, pi, pj, qi, qj)
+            call signature (x, d, dx, lam_i, lam_j, pi, pj, qi, qj, **kwargs)
+        kwargs : dict
+            keyword arguments, to be passed to the potential function
 
         Returns
         ----------
@@ -291,7 +297,7 @@ class Polar:
             for each cell, probability of division per unit time
         """
         # Start with cell division
-        division, x, p, q, lam, beta = self.cell_division(x, p, q, lam, beta, dt)
+        division, x, p, q, lam, beta = self.cell_division(x, p, q, lam, beta, dt, **kwargs)
 
         # Idea: only update _potential_ neighbours every x steps late in simulation
         # For now we do this on CPU, so transfer will be expensive
@@ -332,7 +338,7 @@ class Polar:
 
         return x, p, q, lam, beta
 
-    def simulation(self, x, p, q, lam, beta, eta, potential, yield_every=1, dt=0.1):
+    def simulation(self, x, p, q, lam, beta, eta, potential, yield_every=1, dt=0.1, **kwargs):
         """
         Generator to implement the simulation
 
@@ -353,10 +359,17 @@ class Polar:
         potential : callable
             function that computes the value of the potential between two cells, i and j
             call signature (x, d, dx, lam_i, lam_j, pi, pj, qi, qj)
-        yield_every : int
-            How many simulation time steps to take between yielding the system state
+        yield_every : int, optional
+            How many simulation time steps to take between yielding the system state. Default: 1
         dt : float, optional
             Size of the time step. Default: 0.1
+        kwargs : dict
+            Keyword args passed to self.init_simulation and self.time_step.
+            Values passed here override default values
+            dt : float
+                time step
+            yield_every : int
+                how many time steps to take in between yielding system state
 
         Yields
         ----------
@@ -369,12 +382,15 @@ class Polar:
         lam : numpy.ndarray
             weights for the terms of the potential function for each cell.
         """
-        lam, p, q, sqrt_dt, x, beta = self.init_simulation(dt, lam, p, q, x, beta)
+        dt = kwargs.get('dt', dt)
+        yield_every = kwargs.get('yield_every', yield_every)
+
+        lam, p, q, sqrt_dt, x, beta = self.init_simulation(dt, lam, p, q, x, beta, **kwargs)
 
         tstep = 0
         while True:
             tstep += 1
-            x, p, q, lam, beta = self.time_step(dt, eta, lam, beta, p, q, sqrt_dt, tstep, x, potential=potential)
+            x, p, q, lam, beta = self.time_step(dt, eta, lam, beta, p, q, sqrt_dt, tstep, x, potential=potential, **kwargs)
 
             if tstep % yield_every == 0:
                 xx = x.detach().to("cpu").numpy().copy()
@@ -384,7 +400,7 @@ class Polar:
                 yield xx, pp, qq, ll
 
     @staticmethod
-    def cell_division(x, p, q, lam, beta, dt):
+    def cell_division(x, p, q, lam, beta, dt, **kwargs):
         """
         Decides which cells divide, and if they do, places daughter cells.
         If a cell divides, one daughter cell is placed at the same position as the parent cell, and the other is placed one cell diameter away in a uniformly random direction
@@ -403,6 +419,11 @@ class Polar:
             for each cell, probability of division per unit time
         dt : float
             Size of the time step.
+        kwargs : dict
+            Valid keyword arguments:
+            beta_decay : float
+                the factor by which beta (probability of cell division per unit time) decays upon cell division.
+                after cell division, one daughter cell has the same beta as the mother (b0), and the other has beta = b0 * beta_decay
 
         Returns
         ---------
@@ -421,6 +442,9 @@ class Polar:
         """
         if torch.sum(beta) < 1e-5:
             return False, x, p, q, lam, beta
+        
+        # grab beta_decay from kwargs, wtih a default value of 1.0
+        beta_decay = kwargs.get('beta_decay', 1.0)
 
         # set probability according to beta and dt
         d_prob = beta * dt
@@ -440,7 +464,7 @@ class Polar:
                 p0 = p[idx, :]
                 q0 = q[idx, :]
                 l0 = lam[idx, :]
-                b0 = beta[idx]
+                b0 = beta[idx] * beta_decay
 
                 # make a random vector and normalize to get a random direction
                 move = torch.empty_like(x0).normal_()

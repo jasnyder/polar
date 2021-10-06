@@ -14,6 +14,8 @@ import torch
 
 save_name = 'sphere-test'
 
+max_cells = 2000
+
 # Initialize a random system
 n = int(input('n = ? '))
 try:
@@ -23,17 +25,17 @@ except:
 x, p, q = init_sphere(n, R)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
-lam = np.array([0.0, 1.0, 1.0, 0.0])
+lam = np.array([0.0, 0.6, 0.3, 0.1])
 eta = 1e-5  # noise
 
 # Make one cell polar and divide it faster
 index = np.argmin(np.sum(x[:,:2]**2, axis=1))
 lam = np.repeat(lam[None, :], len(x), axis=0)
-lam[index, :] = (0, 1, 1, 0)
+lam[index, :] = (0, .6, .2, .2)
 beta[index] = 0.0025
 
 # Simulation parameters
-timesteps = 500
+timesteps = 1500
 yield_every = 50  # save simulation state every x time steps
 
 
@@ -71,7 +73,7 @@ for xx, pp, qq, lam in itertools.islice(runner, timesteps):
     print(f'Running {i} of {timesteps}   ({yield_every * i} of {yield_every * timesteps})   ({len(xx)} cells)')
     data.append((xx, pp, qq, lam))
 
-    if len(xx) > 1000:
+    if len(xx) > max_cells:
         print('Stopping')
         break
 
