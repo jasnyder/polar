@@ -1,5 +1,5 @@
 import numpy as np
-
+import pickle
 
 def init_random_system(n):
     """
@@ -208,4 +208,9 @@ def comb_tube(x, p, q, direction = 'around'):
         q[:, 2] = 1
     else:
         raise NotImplementedError('direction must be either \'around\' or \'along\'')
+    return x, p, q
+
+def load_cached(fname):
+    with open(fname, 'rb') as fobj:
+        x, p, q = pickle.load(fobj)
     return x, p, q

@@ -50,7 +50,8 @@ x += jitter*np.random.randn(*x.shape)
 p += jitter*np.random.randn(*p.shape)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
-lam = np.array([0.0, 0.6, 0.3, 0.1])
+lam_0 = np.array([0.0, 1, 0, 0])
+lam = lam_0
 eta = 1e-5  # noise
 add_entries(kwargs, 'eta')
 kwargs['lam_0'] = lam
@@ -58,9 +59,10 @@ kwargs['lam_0'] = lam
 # Make one cell polar and divide it faster
 index = np.argmin(np.sum(x**2, axis=1))
 lam = np.repeat(lam[None, :], len(x), axis=0)
-lam[index, :] = (0, .6, .2, .2)
+lam_new = (0, .3, .4, .3)
+lam[index, :] = lam_new
 beta[index] = 0.0025
-beta_decay = 0.75
+beta_decay = 1.0
 
 add_entries(kwargs, 'beta_decay')
 kwargs['lam_new'] = lam[index, :]
