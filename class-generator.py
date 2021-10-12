@@ -3,19 +3,25 @@ class MyClass:
         self.x = x
 
     def jen(self, num):
-        i = 0
-        while i < num:
-            i+=1
-            self.x = self.x * 2
-            yield i
+        while True:
+            self.x = self.x + num
+            yield self.x
+    def g(self, h = lambda *args : True):
+        if h(self, 0) == True:
+            print('win')
+        else:
+            print('lose')
+
+
+def f(c):
+    c.x += 1
+    return
 
 def main():
     x = float(input('x = ? '))
-    num = int(input('num = ? '))
     c = MyClass(x)
-    for j in c.jen(num):
-        print(j)
-    print(f'now x = {c.x}')
+    h = lambda foo, bar : foo.x>0
+    c.g(h)
 
 
 if __name__ == '__main__':

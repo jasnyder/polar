@@ -1,0 +1,7 @@
+{
+    "python.linting.enabled": false,
+    "python.linting.pylintEnabled": true,
+    "python.linting.pylintArgs": [
+        "--generated-members=numpy.* ,torch.*, --variable-rgx=[a-z_][a-z0-9_]{0,30}$"
+        ]
+}
