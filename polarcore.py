@@ -30,7 +30,7 @@ class Polar:
         ```
     """
     def __init__(self, x, p, q, lam, beta, eta, yield_every, dt = 0.1, beta_decay = 1.0, do_nothing_threshold = 1e-5, divide_single = False,
-                 device='cuda', dtype=torch.float, init_k=100, callback=None):
+                 device='cuda', dtype=torch.float, init_k=100, callback=None, wnt_cells = None, wnt_range = None):
         self.device = device
         self.dtype = dtype
 
@@ -54,6 +54,8 @@ class Polar:
         self.beta_decay = beta_decay
         self.do_nothing_threshold = do_nothing_threshold
         self.divide_single = divide_single
+        self.wnt_cells = wnt_cells
+        self.wnt_range = wnt_range
 
     def init_simulation(self, x, p, q, lam, beta):
         """
@@ -202,8 +204,8 @@ class Polar:
                 largest number of true neighbors of any cell
         """
         # Find neighbours
-        full_n_list = self.x[self.idx]
 
+        full_n_list = self.x[self.idx]
         dx = self.x[:, None, :] - full_n_list
         z_mask = self.find_true_neighbours(self.d, dx)
 
@@ -214,6 +216,7 @@ class Polar:
         dx = torch.gather(dx, 1, sort_idx[:, :, None].expand(-1, -1, 3))
         idx = torch.gather(self.idx, 1, sort_idx)
 
+        
         m = torch.max(torch.sum(z_mask, dim=1)) + 1
 
         z_mask = z_mask[:, :m]
@@ -233,7 +236,10 @@ class Polar:
         lam_i = self.lam[:, None, :].expand(self.p.shape[0], idx.shape[1], self.lam.shape[1])
         lam_j = self.lam[idx]
 
-        Vij = potential(self.x, d, dx, lam_i, lam_j, pi, pj, qi, qj)
+        if self.wnt_cells is not None:
+            Vij = potential(self.x, d, dx, lam_i, lam_j, pi, pj, qi, qj, self.wnt_cells, self.wnt_range)
+        else:
+            Vij = potential(self.x, d, dx, lam_i, lam_j, pi, pj, qi, qj)
         V = torch.sum(z_mask.float() * Vij)
 
         return V, int(m)

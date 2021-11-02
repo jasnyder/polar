@@ -1,22 +1,26 @@
 """
-This file is to run a simulation using the newly-modified code base.
+This file is to run a simulation of a sphere of cells with randomly-initialized PCP
 """
 import numpy as np
 import time
 import itertools
 import os
 from polarcore import Polar
-from initsystems import init_random_system, init_tube, init_tube_grid
+from initsystems import comb_sphere, init_sphere
 import pickle
 import torch
 
 
-save_name = 'tube-grid-slowly'
-max_cells = 3000
+save_name = 'random-sphere'
+max_cells = 1000
 
-# Grab tube initial condition from log
-with open('data/ic/relaxed-tube-around.pkl', 'rb') as fobj:
-    x, p, q = pickle.load(fobj)
+# Initialize a random system
+n = int(input('n = ? '))
+try:
+    R = float(input('R = ? '))
+except:
+    R = None
+x, p, q = init_sphere(n, R)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
 lam_0 = np.array([0.0, .7, .25, .05])
@@ -24,15 +28,15 @@ lam = lam_0
 eta = 1e-2  # noise
 
 # Make one cell polar and divide it faster
-index = np.argmin(np.sum(x**2, axis=1))
+index = np.argmax(x[:,2])
 lam = np.repeat(lam[None, :], len(x), axis=0)
 lam_new = (0, .7, .25, .05)
 lam[index, :] = lam_0
 beta[index] = 0.025
-beta_decay = 0
+beta_decay = 0.5
 
 # Simulation parameters
-timesteps = 1000
+timesteps = 500
 yield_every = 200  # save simulation state every x time steps
 dt = 0.1
 
@@ -64,7 +68,7 @@ def division_decider(sim, tstep):
     T = sim.dt * tstep
     if T < 1000 or len(sim.x) > max_cells - 1:
         return False
-    f = lambda T : 0.5*T
+    f = lambda T : 0.15*T
     if int(f(T)) > int(f(T-sim.dt)):
         return True
     else:

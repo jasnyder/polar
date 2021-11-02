@@ -1,6 +1,28 @@
 import numpy as np
 import pickle
 
+def init_grid(n, m, d = 2):
+    """
+    Initializes a square grid of cells at a distance of d cell radii (default = 2)
+
+    AB polarity is initialized as 'up', and PCP is a random direction in the plane
+    """
+    xx = np.arange(n) - n/2 + 1/2
+    yy = np.arange(m) - m/2 + 1/2
+    idx = 0
+    x = np.zeros((n*m, 3))
+    p = np.zeros_like(x)
+    q = np.zeros_like(x)
+    Q = np.random.randn(3)
+    Q = Q/np.sqrt((Q**2).sum())
+    for X in xx:
+        for Y in yy:
+            x[idx, :] = [X*d, Y*d, 0]
+            p[idx, :] = [0, 0, 1]
+            q[idx, :] = Q
+            idx += 1
+    return x, p, q
+
 def init_random_system(n):
     """
     Initialize a random system with n cells. Position is normally distributed in each dimension, and each component of p and of q is uniformly distributed between -1 and 1
@@ -208,6 +230,10 @@ def comb_tube(x, p, q, direction = 'around'):
         q[:, 2] = 1
     else:
         raise NotImplementedError('direction must be either \'around\' or \'along\'')
+    return x, p, q
+
+def comb_sphere(x, p, q):
+    q = np.vstack((p[:,1], -p[:,0], np.zeros_like(p[:,2]))).T
     return x, p, q
 
 def load_cached(fname):
