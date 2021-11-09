@@ -1,28 +1,25 @@
-class MyClass:
-    def __init__(self, x):
-        self.x = x
+import itertools
+import torch
 
-    def jen(self, num):
-        while True:
-            self.x = self.x + num
-            yield self.x
-    def g(self, h = lambda *args : True):
-        if h(self, 0) == True:
-            print('win')
-        else:
-            print('lose')
+class MyClass():
+    def __init__(self, x, fun, step = 0.1):
+        self.x = torch.tensor(x, dtype = torch.float, requires_grad=True)
+        self.f = fun
+        self.step = step
+        self.y = None
+    def apply(self):
+        self.y = self.f(self.x)
+    def grad_step(self):
+        self.y.backward()
+        with torch.no_grad():
+            self.x += -self.step*self.x.grad
+        self.x.grad.zero_()
 
-
-def f(c):
-    c.x += 1
-    return
-
-def main():
-    x = float(input('x = ? '))
-    c = MyClass(x)
-    h = lambda foo, bar : foo.x>0
-    c.g(h)
-
-
-if __name__ == '__main__':
-    main()
+if __name__=='__main__':
+    x = 3
+    fun = lambda x : x**2
+    foo = MyClass(x, fun)
+    for i in range(50):
+        foo.apply()
+        foo.grad_step()
+        print(foo.x)

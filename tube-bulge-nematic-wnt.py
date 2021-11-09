@@ -24,7 +24,7 @@ with open('data/ic/relaxed-tube-around.pkl', 'rb') as fobj:
     x, p, q = pickle.load(fobj)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
-lam_0 = np.array([0.0, .5, .4, .05, 0.05])
+lam_0 = np.array([0.0, .4, .3, .05, 0.25])
 lam = lam_0
 eta = 3e-2 # noise
 
@@ -39,7 +39,7 @@ wnt_cells = [index]
 wnt_range = 4
 
 # Simulation parameters
-timesteps = 500
+timesteps = 100
 yield_every = 100   # save simulation state every x time steps
 dt = 0.1
 
@@ -66,7 +66,7 @@ def division_decider(sim, tstep):
 
 # Make the simulation runner object:
 sim = Polar(x, p, q, lam, beta, eta=eta, yield_every=yield_every, device="cuda", init_k=50, beta_decay = beta_decay, divide_single = True, wnt_cells = wnt_cells, wnt_range=wnt_range)
-runner = sim.simulation(potential=potential, division_decider=division_decider)
+runner = sim.simulation(potential=potential, division_decider=lambda *args:False)
 
 # Running the simulation
 data = [(x, p, q, lam)]  # For storing data

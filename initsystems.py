@@ -1,4 +1,5 @@
 import numpy as np
+import math
 import pickle
 
 def init_grid(n, m, d = 2):
@@ -23,7 +24,7 @@ def init_grid(n, m, d = 2):
             idx += 1
     return x, p, q
 
-def init_random_system(n):
+def init_random_system(n, domain_size=30):
     """
     Initialize a random system with n cells. Position is normally distributed in each dimension, and each component of p and of q is uniformly distributed between -1 and 1
     
@@ -41,9 +42,9 @@ def init_random_system(n):
     q : np.ndarray
         PCP vector of each cell
     """
-    x = np.random.randn(n, 3)
-    p = 2 * np.random.rand(n, 3) - 1
-    q = 2 * np.random.rand(n, 3) - 1
+    x = domain_size * np.random.randn(n, 3)
+    p = np.random.randn(n, 3)
+    q = np.random.randn(n, 3)
 
     return x, p, q
 
@@ -78,7 +79,7 @@ def init_sphere(n, R = None):
     x = R*(x.T/np.linalg.norm(x, axis = 1)).T
 
     p = x/R
-    q = 2*np.random.rand(n, 3) - 1
+    q = np.random.randn(n, 3)
 
     return x, p, q
 
@@ -239,4 +240,135 @@ def comb_sphere(x, p, q):
 def load_cached(fname):
     with open(fname, 'rb') as fobj:
         x, p, q = pickle.load(fobj)
+    return x, p, q
+
+
+def init_square_system(n, domain_size=30):
+    x = domain_size * np.random.random((n, 3))
+    p = np.random.randn(n, 3)
+    q = np.random.randn(n, 3)
+
+    return x, p, q
+
+def init_random_rectangle(n, domain_size1=30, domain_size2=50):
+    x = np.random.random((n, 3))
+    x[:, :2] *= domain_size1
+    x[:, 2] *= domain_size2
+
+    p = np.random.randn(n, 3)
+    q = np.random.randn(n, 3)
+
+    return x, p, q
+
+def fibonacci_sphere(samples=1, radius = 30):
+    rnd = 1.
+    points = []
+    offset = 2./samples
+    increment = math.pi * (3. - math.sqrt(5.))
+
+    for i in range(samples):
+        y = ((i * offset) - 1) + (offset / 2)
+        r = math.sqrt(1 - pow(y,2))
+
+        phi = ((i + rnd) % samples) * increment
+
+        x = math.cos(phi) * r
+        z = math.sin(phi) * r
+
+        points.append([x,y,z])
+    p = np.array(points)
+    x = p.copy() * radius
+    q = np.random.randn(samples, 3)    
+    return x, p, q
+
+def init_cylinder(n, domain_size=30, ratio=50):
+    phi = 2 * np.pi * np.random.random(n)
+    x = domain_size/ratio * np.cos(phi) + domain_size/2
+    y = domain_size/ratio * np.sin(phi) + domain_size/2
+    z = 0.99999 * domain_size * np.random.random(n)
+
+    x = np.array([x, y, z]).T
+
+    p = x.copy()
+    p -= np.mean(p, axis=0)
+    p[:, 2] = 0
+    q = np.cross(p, [0, 0, 1])
+
+    return x, p, q
+
+def init_solid_cylinder(n, domain_size=30, ratio=50):
+    phi = 2 * np.pi * np.random.random(n)
+    r = np.sqrt(np.random.random(n))
+    x = r * domain_size/ratio * np.cos(phi) + domain_size/2
+    y = r * domain_size/ratio * np.sin(phi) + domain_size/2
+    z = 0.99999 * domain_size * np.random.random(n)
+
+    x = np.array([x, y, z]).T
+
+    p = x.copy()
+    p -= np.mean(p, axis=0)
+    p[:, 2] = 0
+    q = np.cross(p, [0, 0, 1])
+
+    return x, p, q
+
+def init_torus(n, domain_size=30, ratio=5):
+    phi = 2 * np.pi * np.random.random(n)
+
+    x0 = domain_size * np.cos(phi)
+    y0 = domain_size * np.sin(phi)
+
+    phi2 = 2 * np.pi * np.random.random(n)
+
+    x = x0 + np.cos(phi) * domain_size / ratio * np.cos(phi2)
+    y = y0 + np.sin(phi) * domain_size / ratio * np.cos(phi2)
+    z = domain_size / ratio * np.sin(phi2)
+
+    x = np.array([x, y, z]).T
+
+    p = x.copy()
+    p[:, 0] -= x0
+    p[:, 1] -= y0
+
+    c = x.copy()
+    c[:, 0] = y0
+    c[:, 1] = -x0
+    c[:, 2] *= 0
+
+    p /= np.sqrt(np.sum(p**2))
+    c /= np.sqrt(np.sum(c**2))
+    q = np.cross(p, c)
+
+    return x, p, q
+
+def init_torus_cross(n, domain_size=30, ratio=5):
+
+    x, p, q = init_torus(n, domain_size=domain_size, ratio=ratio)
+
+    xc, pc, qc = init_cylinder(int(n/np.pi), domain_size=0.8 * 2*domain_size, ratio=ratio*2)
+
+    xc[:, 1], xc[:, 2] = xc[:, 2].copy(), xc[:, 1].copy()
+    pc[:, 1], pc[:, 2] = pc[:, 2].copy(), pc[:, 1].copy()
+    qc[:, 1], qc[:, 2] = qc[:, 2].copy(), qc[:, 1].copy()
+
+    xc -= np.mean(xc, axis=0)
+
+    return np.concatenate((x, xc)), np.concatenate((p, pc)), np.concatenate((q, qc))
+
+def init_plane(n, L = 25):
+    x = np.zeros(n)
+    y = L * np.random.random(n)
+    z = L * np.random.random(n)
+
+    x = np.array([x, y, z]).T
+    x -= np.mean(x, axis=0)
+
+    d2 = np.sort(np.sum((x[:, None, :] - x[None, :, :])**2, axis=2), axis=1)
+    mean_dist = np.mean(np.sqrt(d2[:, 1:5]))
+    x *= np.sqrt(2)/mean_dist
+
+    p = np.zeros_like(x)
+    p[:, 0] = 1
+    q = np.cross(p, [0, 0, 1])
+
     return x, p, q

@@ -30,7 +30,7 @@ class Polar:
         ```
     """
     def __init__(self, x, p, q, lam, beta, eta, yield_every, dt = 0.1, beta_decay = 1.0, do_nothing_threshold = 1e-5, divide_single = False,
-                 device='cuda', dtype=torch.float, init_k=100, callback=None, wnt_cells = None, wnt_range = None):
+                 device='cuda', dtype=torch.float, init_k=100, callback=None):
         self.device = device
         self.dtype = dtype
 
@@ -40,24 +40,22 @@ class Polar:
         self.idx = None
         self.callback = callback
 
-        self.x = None
-        self.p = None
-        self.q = None
-        self.beta = None
+        self.x = x
+        self.p = p
+        self.q = q
+        self.beta = beta
         self.dt = dt
         self.sqrt_dt = None
-        self.lam = None
+        self.lam = lam
 
-        self.init_simulation(x, p, q, lam, beta)
+        self.init_simulation()
         self.eta = eta
         self.yield_every = yield_every
         self.beta_decay = beta_decay
         self.do_nothing_threshold = do_nothing_threshold
         self.divide_single = divide_single
-        self.wnt_cells = wnt_cells
-        self.wnt_range = wnt_range
 
-    def init_simulation(self, x, p, q, lam, beta):
+    def init_simulation(self):
         """
         Checks input dimensions, cleans and converts into torch.Tensor types
 
@@ -82,18 +80,18 @@ class Polar:
         ----------
             None
         """
-        assert len(x) == len(p)
-        assert len(q) == len(x)
-        assert len(beta) == len(x)
+        assert len(self.x) == len(self.p)
+        assert len(self.q) == len(self.x)
+        assert len(self.beta) == len(self.x)
 
         sqrt_dt = np.sqrt(self.dt)
-        x = torch.tensor(x, requires_grad=True, dtype=self.dtype, device=self.device)
-        p = torch.tensor(p, requires_grad=True, dtype=self.dtype, device=self.device)
-        q = torch.tensor(q, requires_grad=True, dtype=self.dtype, device=self.device)
+        x = torch.tensor(self.x, requires_grad=True, dtype=self.dtype, device=self.device)
+        p = torch.tensor(self.p, requires_grad=True, dtype=self.dtype, device=self.device)
+        q = torch.tensor(self.q, requires_grad=True, dtype=self.dtype, device=self.device)
 
-        beta = torch.tensor(beta, dtype=self.dtype, device=self.device)
+        beta = torch.tensor(self.beta, dtype=self.dtype, device=self.device)
 
-        lam = torch.tensor(lam, dtype=self.dtype, device=self.device)
+        lam = torch.tensor(self.lam, dtype=self.dtype, device=self.device)
         # if lam is not given per-cell, return an expanded view
         if len(lam.shape) == 1:
             lam = lam.expand(x.shape[0], lam.shape[0]).clone()
@@ -132,9 +130,10 @@ class Polar:
             k = self.k
         tree = cKDTree(self.x.detach().to("cpu").numpy())
         d, idx = tree.query(self.x.detach().to("cpu").numpy(), k + 1, distance_upper_bound=distance_upper_bound, n_jobs=workers)
-        return d[:, 1:], idx[:, 1:]
+        self.d = torch.tensor(d[:, 1:], dtype = self.dtype, device=self.device)
+        self.idx = torch.tensor(idx[:, 1:] , dtype = torch.long, device=self.device)
 
-    def find_true_neighbours(self, d, dx):
+    def find_true_neighbours(self):
         """
         Finds the true neighbors of each cell
 
@@ -149,28 +148,42 @@ class Polar:
         ----------
             z_mask : torch.tensor
         """
+        full_n_list = self.x[self.idx]
+        self.dx = self.x[:, None, :] - full_n_list
         with torch.no_grad():
             z_masks = []
             i0 = 0
             batch_size = 250
             i1 = batch_size
             while True:
-                if i0 >= dx.shape[0]:
+                if i0 >= self.dx.shape[0]:
                     break
                 # ?
-                n_dis = torch.sum((dx[i0:i1, :, None, :] / 2 - dx[i0:i1, None, :, :]) ** 2, dim=3)
+                n_dis = torch.sum((self.dx[i0:i1, :, None, :] / 2 - self.dx[i0:i1, None, :, :]) ** 2, dim=3)
                 # ??
                 n_dis += 1000 * torch.eye(n_dis.shape[1], device=self.device, dtype=self.dtype)[None, :, :]
 
-                z_mask = torch.sum(n_dis < (d[i0:i1, :, None] ** 2 / 4), dim=2) <= 0
+                z_mask = torch.sum(n_dis < (self.d[i0:i1, :, None] ** 2 / 4), dim=2) <= 0
                 z_masks.append(z_mask)
 
-                if i1 > dx.shape[0]:
+                if i1 > self.dx.shape[0]:
                     break
                 i0 = i1
                 i1 += batch_size
         z_mask = torch.cat(z_masks, dim=0)
-        return z_mask
+        sort_idx = torch.argsort(z_mask.int(), dim=1, descending=True)
+
+        z_mask = torch.gather(z_mask, 1, sort_idx)
+        dx = torch.gather(self.dx, 1, sort_idx[:, :, None].expand(-1, -1, 3))
+        idx = torch.gather(self.idx, 1, sort_idx)
+
+        m = torch.max(torch.sum(z_mask, dim=1)) + 1
+
+        self.z_mask = z_mask[:, :m]
+        self.dx = dx[:, :m]
+        self.idx = idx[:, :m]
+        self.d = torch.linalg.norm(self.dx, dim = -1)
+        return m
 
     def potential(self, potential):
         """
@@ -204,43 +217,22 @@ class Polar:
                 largest number of true neighbors of any cell
         """
         # Find neighbours
-
-        full_n_list = self.x[self.idx]
-        dx = self.x[:, None, :] - full_n_list
-        z_mask = self.find_true_neighbours(self.d, dx)
-
-        # Minimize size of z_mask and reorder idx and dx
-        sort_idx = torch.argsort(z_mask.int(), dim=1, descending=True)
-
-        z_mask = torch.gather(z_mask, 1, sort_idx)
-        dx = torch.gather(dx, 1, sort_idx[:, :, None].expand(-1, -1, 3))
-        idx = torch.gather(self.idx, 1, sort_idx)
-
+        m = self.find_true_neighbours() # return value = maximum number of true neighbors of any cell
         
-        m = torch.max(torch.sum(z_mask, dim=1)) + 1
-
-        z_mask = z_mask[:, :m]
-        dx = dx[:, :m]
-        idx = idx[:, :m]
-
         # Normalise dx
-        d = torch.sqrt(torch.sum(dx**2, dim=2))
-        dx = dx / d[:, :, None]
+        dx = self.dx / torch.linalg.norm(self.dx, dim = -1)[:, :, None]
 
         # Calculate S
-        pi = self.p[:, None, :].expand(self.p.shape[0], idx.shape[1], 3)
-        pj = self.p[idx]
-        qi = self.q[:, None, :].expand(self.q.shape[0], idx.shape[1], 3)
-        qj = self.q[idx]
+        pi = self.p[:, None, :].expand(self.p.shape[0], self.idx.shape[1], 3)
+        pj = self.p[self.idx]
+        qi = self.q[:, None, :].expand(self.q.shape[0], self.idx.shape[1], 3)
+        qj = self.q[self.idx]
 
-        lam_i = self.lam[:, None, :].expand(self.p.shape[0], idx.shape[1], self.lam.shape[1])
-        lam_j = self.lam[idx]
+        lam_i = self.lam[:, None, :].expand(self.p.shape[0], self.idx.shape[1], self.lam.shape[1])
+        lam_j = self.lam[self.idx]
 
-        if self.wnt_cells is not None:
-            Vij = potential(self.x, d, dx, lam_i, lam_j, pi, pj, qi, qj, self.wnt_cells, self.wnt_range)
-        else:
-            Vij = potential(self.x, d, dx, lam_i, lam_j, pi, pj, qi, qj)
-        V = torch.sum(z_mask.float() * Vij)
+        Vij = potential(self.x, self.d, dx, lam_i, lam_j, pi, pj, qi, qj)
+        V = torch.sum(self.z_mask.float() * Vij)
 
         return V, int(m)
 
@@ -407,9 +399,8 @@ class Polar:
             self.k = min(self.k, len(self.x) - 1)
 
             if division or tstep % n_update == 0 or self.idx is None:
-                d, idx = self.find_potential_neighbours()
-                self.idx = torch.tensor(idx, dtype=torch.long, device=self.device)
-                self.d = torch.tensor(d, dtype=self.dtype, device=self.device)
+                self.find_potential_neighbours()
+
             
 
             self.gradient_step(tstep, potential=potential)
@@ -541,3 +532,217 @@ class Polar:
         self.q.requires_grad = True
 
         return True
+
+
+
+
+class PolarWNT(Polar):
+    def __init__(self, wnt_cells = None, wnt_threshold = 1e-2, *args, **kwargs):
+        self.wnt_cells = wnt_cells
+        self.wnt_threshold = wnt_threshold
+        super().__init__(*args, **kwargs)
+        # initialize a G (WNT gradient) vector as zeros
+        self.G = torch.zeros_like(self.x)
+
+    def init_simulation(self):
+        """
+        Checks input dimensions, cleans and converts into torch.Tensor types
+        If there are WNT cells, it adds WNT to them in the w tensor
+
+        Parameters
+        ----------
+            dt : float
+                size of time step for simulation
+            lam : array
+                weights for the terms of the potential function, possibly different for each cell.
+            p : array_like
+                AB polarity vector of each cell
+            q : array_like
+                PCP vector of each cell
+            w : array_like
+                WNT concentration at each cell
+            x : array_like
+                Position of each cell in 3D space
+            beta : array_like
+                for each cell, probability of division per unit time
+            kwargs : dict
+                keyword arguments
+
+        Returns
+        ----------
+            None
+        """
+        assert len(self.x) == len(self.p)
+        assert len(self.q) == len(self.x)
+        assert len(self.beta) == len(self.x)
+
+        sqrt_dt = np.sqrt(self.dt)
+        x = torch.tensor(self.x, requires_grad=True, dtype=self.dtype, device=self.device)
+        p = torch.tensor(self.p, requires_grad=True, dtype=self.dtype, device=self.device)
+        q = torch.tensor(self.q, requires_grad=True, dtype=self.dtype, device=self.device)
+        w = torch.zeros(len(x), requires_grad=False, dtype=self.dtype, device=self.device)
+        if self.wnt_cells is not None:
+            w[self.wnt_cells] = 1
+
+        beta = torch.tensor(self.beta, dtype=self.dtype, device=self.device)
+
+        lam = torch.tensor(self.lam, dtype=self.dtype, device=self.device)
+        # if lam is not given per-cell, return an expanded view
+        if len(lam.shape) == 1:
+            lam = lam.expand(x.shape[0], lam.shape[0]).clone()
+
+        self.x = x
+        self.p = p
+        self.q = q
+        self.w = w
+        self.beta = beta
+        self.sqrt_dt = sqrt_dt
+        self.lam = lam
+        return
+
+    def get_gradient_vectors(self):
+        # Compute gradient vectors
+        dx = self.dx.clone()
+        with torch.no_grad():
+
+            # Count Paneth cells as weighted cells only inside this function to establish gradient
+            weighted_cells = torch.where(self.w >= self.w_threshold)[0]
+
+            # Calculate weights tensors
+            w_ii = self.w[:, None].expand(self.w.shape[0], self.idx.shape[1])
+            w_ij = torch.zeros_like(w_ii)
+            w_ij[weighted_cells, :] = self.w[self.idx[weighted_cells]]
+
+            # Normalize dx compute G
+            d_dx = torch.sqrt(torch.sum(dx ** 2, dim=2))
+            dx /= d_dx[:, :, None]
+            Gij = (w_ii[:, :, None] + w_ij[:, :, None]) * dx
+            G = torch.sum(self.z_mask[:, :, None].float() * Gij, dim=1)
+
+            # Project G vectors so divisions occur in cell-cell-plane and normalize
+            G_tilde = -torch.cross(torch.cross(G, self.p), self.p)  # Note the minus!
+            d_G_tilde = torch.sqrt(torch.sum(G_tilde ** 2, dim=1))
+            G_tilde[weighted_cells] /= d_G_tilde[weighted_cells, None]
+        self.G = G_tilde
+        return G_tilde, self.w
+    
+    def get_gradient_averaging(self):
+        # Smoothening the WNT gradient based on true local neighbourhood
+        w_copy = self.w.clone()
+
+        with torch.no_grad():
+            weights_true_neighb = self.w[self.idx] * self.z_mask.float()
+            w_copy = (torch.sum(weights_true_neighb, dim=1) + w_copy) / (torch.sum(self.z_mask, dim=1) + 1).float()
+        
+        self.w = w_copy
+        return w_copy
+
+    def potential(self, potential):
+        m = self.find_true_neighbours() # return value = maximum number of true neighbors of any cell
+        
+        # Normalise dx
+        dx = self.dx / self.d[:, :, None]
+
+        # Normalise p, q
+        with torch.no_grad():
+            self.p /= torch.sqrt(torch.sum(self.p ** 2, dim=1))[:, None]
+            self.q /= torch.sqrt(torch.sum(self.q ** 2, dim=1))[:, None]
+
+        # Calculate S in the following
+        pi = self.p[:, None, :].expand(self.p.shape[0], self.idx.shape[1], 3)
+        pj = self.p[self.idx]
+        qi = self.q[:, None, :].expand(self.q.shape[0], self.idx.shape[1], 3)
+        qj = self.q[self.idx]
+        Gi = self.G[:, None, :].expand(self.G.shape[0], self.idx.shape[1], 3)
+
+        lam_i = self.lam[:, None, :].expand(self.p.shape[0], self.idx.shape[1], self.lam.shape[1])
+        lam_j = self.lam[self.idx]
+        Vij = potential(self.x, self.d, dx, lam_i, lam_j, pi, pj, qi, qj, Gi)
+        V = torch.sum(self.z_mask.float() * Vij)
+
+        return V, int(m)
+
+    def simulation(self, potential, division_decider = lambda *args : True):
+        """
+        Generator to implement the simulation
+
+        Note: you can interact with this thing. Example:
+        ```python
+        polarguy = PolarWNT(**)
+        sim = polarguy.simulation(***)
+        for out in sim:
+            data.append(out)
+            polarguy.get_gradient_averaging()
+        ```
+
+        Parameters
+        ----------
+            x : torch.Tensor
+                Position of each cell in 3D space
+            p : torch.Tensor
+                AB polarity vector of each cell
+            q : torch.Tensor
+                PCP vector of each cell
+            lam : torch.Tensor
+                weights for the terms of the potential function for each cell.
+            beta : torch.Tensor
+                for each cell, probability of division per unit time
+            eta : float
+                Strength of the added noise
+            potential : callable
+                function that computes the value of the potential between two cells, i and j
+                call signature (x, d, dx, lam_i, lam_j, pi, pj, qi, qj)
+            yield_every : int, optional
+                How many simulation time steps to take between yielding the system state. Default: 1
+            dt : float, optional
+                Size of the time step. Default: 0.1
+            kwargs : dict
+                Keyword args passed to self.init_simulation and self.time_step.
+                Values passed here override default values
+                dt : float
+                    time step
+                yield_every : int
+                    how many time steps to take in between yielding system state
+
+        Yields
+        ----------
+            x : numpy.ndarray
+                Position of each cell in 3D space
+            p : numpy.ndarray
+                AB polarity vector of each cell
+            q : numpy.ndarray
+                PCP vector of each cell
+            w : numpy.ndarray
+                WNT concentration at each cell
+            lam : numpy.ndarray
+                weights for the terms of the potential function for each cell.
+        """
+
+        tstep = 0
+        while True:
+            tstep += 1
+
+            # perform cell division, depending on the output of the function division_decider
+            # by default, always do cell division (this results in exponential growth of number of cells)
+            division = False
+            if division_decider(self, tstep):
+                if self.divide_single:
+                    division = self.cell_division_single()
+                else:
+                    division = self.cell_division()
+            
+            n_update = self.update_k(self.true_neighbour_max, tstep)
+            self.k = min(self.k, len(self.x) - 1)
+
+            if division or tstep % n_update == 0 or self.idx is None:
+                self.find_potential_neighbours()
+
+            self.gradient_step(tstep, potential=potential)
+
+            if tstep % self.yield_every == 0:
+                xx = self.x.detach().to("cpu").numpy().copy()
+                pp = self.p.detach().to("cpu").numpy().copy()
+                qq = self.q.detach().to("cpu").numpy().copy()
+                ww = self.w.detach().to("cpu").numpy().copy()
+                ll = self.lam.detach().to("cpu").numpy().copy()
+                yield xx, pp, qq, ww, ll

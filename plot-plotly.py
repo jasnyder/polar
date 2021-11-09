@@ -38,4 +38,4 @@ def fun(scene):
     return
 fig.for_each_scene(fun)
 
-fig.write_html('animations/'+fname.split('/')[1].split('.')[0]+'.html', include_plotlyjs = 'directory', full_html = False, animation_opts = {'frame':{'duration':100}})
+fig.write_html('animations/'+fname[5:-4]+'.html', include_plotlyjs = 'directory', full_html = False, animation_opts = {'frame':{'duration':50}})

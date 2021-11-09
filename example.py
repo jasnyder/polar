@@ -25,7 +25,7 @@ lam[index, :] = (0, 1, 0, 0)
 beta[index] = 0.0025
 
 # Simulation parameters
-timesteps = 1000
+timesteps = 10
 yield_every = 50  # save simulation state every x time steps
 
 
@@ -49,8 +49,8 @@ def potential(x, d, dx, lam_i, lam_j, pi, pj, qi, qj):
 
 
 # Make the simulation runner object:
-sim = Polar(device="cuda", init_k=50)
-runner = sim.simulation(x, p, q, lam, beta, eta=eta, yield_every=yield_every, potential=potential)
+sim = Polar(x, p, q, lam, beta, eta=eta, yield_every=yield_every, device="cuda", init_k=50)
+runner = sim.simulation(potential=potential)
 
 # Running the simulation
 data = []  # For storing data
@@ -72,7 +72,7 @@ try:
 except:
     pass
 with open('data/test1.pkl', 'wb') as f:
-    pickle.dump(data, f)
+    pickle.dump([data, sim.__dict__], f)
 
 print(f'Simulation done, saved {timesteps} datapoints')
 print('Took', time.time() - t1, 'seconds')
