@@ -602,11 +602,12 @@ class PolarWNT(Polar):
 
     def get_gradient_vectors(self):
         # Compute gradient vectors
+        self.find_true_neighbours()
         dx = self.dx.clone()
         with torch.no_grad():
 
             # Count Paneth cells as weighted cells only inside this function to establish gradient
-            weighted_cells = torch.where(self.w >= self.w_threshold)[0]
+            weighted_cells = torch.where(self.w >= self.wnt_threshold)[0]
 
             # Calculate weights tensors
             w_ii = self.w[:, None].expand(self.w.shape[0], self.idx.shape[1])
@@ -620,7 +621,8 @@ class PolarWNT(Polar):
             G = torch.sum(self.z_mask[:, :, None].float() * Gij, dim=1)
 
             # Project G vectors so divisions occur in cell-cell-plane and normalize
-            G_tilde = -torch.cross(torch.cross(G, self.p), self.p)  # Note the minus!
+            # G_tilde = -torch.cross(torch.cross(G, self.p), self.p)  # Note the minus!
+            G_tilde = G
             d_G_tilde = torch.sqrt(torch.sum(G_tilde ** 2, dim=1))
             G_tilde[weighted_cells] /= d_G_tilde[weighted_cells, None]
         self.G = G_tilde
@@ -628,6 +630,7 @@ class PolarWNT(Polar):
     
     def get_gradient_averaging(self):
         # Smoothening the WNT gradient based on true local neighbourhood
+        self.find_true_neighbours()
         w_copy = self.w.clone()
 
         with torch.no_grad():
@@ -635,13 +638,16 @@ class PolarWNT(Polar):
             w_copy = (torch.sum(weights_true_neighb, dim=1) + w_copy) / (torch.sum(self.z_mask, dim=1) + 1).float()
         
         self.w = w_copy
+        # replenish WNT at source cells
+        self.w[self.wnt_cells] = 1
         return w_copy
 
     def potential(self, potential):
+        # Find neighbours
         m = self.find_true_neighbours() # return value = maximum number of true neighbors of any cell
         
         # Normalise dx
-        dx = self.dx / self.d[:, :, None]
+        dx = self.dx / torch.linalg.norm(self.dx, dim = -1)[:, :, None]
 
         # Normalise p, q
         with torch.no_grad():
@@ -736,7 +742,8 @@ class PolarWNT(Polar):
 
             if division or tstep % n_update == 0 or self.idx is None:
                 self.find_potential_neighbours()
-
+            
+            self.get_gradient_vectors()
             self.gradient_step(tstep, potential=potential)
 
             if tstep % self.yield_every == 0:
@@ -746,3 +753,141 @@ class PolarWNT(Polar):
                 ww = self.w.detach().to("cpu").numpy().copy()
                 ll = self.lam.detach().to("cpu").numpy().copy()
                 yield xx, pp, qq, ww, ll
+    def cell_division(self):
+        """
+        Decides which cells divide, and if they do, places daughter cells.
+        If a cell divides, one daughter cell is placed at the same position as the parent cell, and the other is placed one cell diameter away in a uniformly random direction
+
+        Parameters
+        ----------
+            x : torch.Tensor
+                Position of each cell in 3D space
+            p : torch.Tensor
+                AB polarity vector of each cell
+            q : torch.Tensor
+                PCP vector of each cell
+            lam : torch.Tensor
+                weights for the terms of the potential function for each cell.
+            beta : torch.Tensor
+                for each cell, probability of division per unit time
+            dt : float
+                Size of the time step.
+            kwargs : dict
+                Valid keyword arguments:
+                beta_decay : float
+                    the factor by which beta (probability of cell division per unit time) decays upon cell division.
+                    after cell division, one daughter cell has the same beta as the mother (b0), and the other has beta = b0 * beta_decay
+
+        Returns
+        ---------
+            division : bool
+                True if cell division has taken place, otherwise False
+            x : torch.Tensor
+                Position of each cell in 3D space
+            p : torch.Tensor
+                AB polarity vector of each cell
+            q : torch.Tensor
+                PCP vector of each cell
+            lam : torch.Tensor
+                weights for the terms of the potential function for each cell.
+            beta : torch.Tensor
+                for each cell, probability of division per unit time
+        """
+        if torch.sum(self.beta) < self.do_nothing_threshold:
+            return False
+        
+        # set probability according to beta and dt
+        d_prob = self.beta * self.dt
+        # flip coins
+        draw = torch.empty_like(self.beta).uniform_()
+        # find successes
+        events = draw < d_prob
+        division = False
+
+        if torch.sum(events) > 0:
+            with torch.no_grad():
+                division = True
+                # find cells that will divide
+                idx = torch.nonzero(events)[:, 0]
+
+                x0 = self.x[idx, :]
+                p0 = self.p[idx, :]
+                q0 = self.q[idx, :]
+                w0 = self.w[idx]
+                l0 = self.lam[idx, :]
+                b0 = self.beta[idx] * self.beta_decay
+
+                # make a random vector and normalize to get a random direction
+                move = torch.empty_like(x0).normal_()
+                move /= torch.sqrt(torch.sum(move**2, dim=1))[:, None]
+
+                # move the cells so that the center of mass of each pair is at the same place as the mother cell was
+                x0 = x0 - move/2
+                self.x[idx, :] += move/2
+
+                # divide WNT from mother cells evenly to daughter cells
+                self.w[idx] /= 2
+                w0 /= 2
+
+                # append new cell data to the system state
+                self.x = torch.cat((self.x, x0))
+                self.p = torch.cat((self.p, p0))
+                self.q = torch.cat((self.q, q0))
+                self.w = torch.cat((self.w, w0))
+                self.lam = torch.cat((self.lam, l0))
+                self.beta = torch.cat((self.beta, b0))
+
+        # replenish WNT at source cell(s)
+        self.w[self.wnt_cells] = 1
+
+        self.x.requires_grad = True
+        self.p.requires_grad = True
+        self.q.requires_grad = True
+
+        return division
+
+    def cell_division_single(self):
+        """
+        Selects exactly one cell to divide and divides it.
+        If a cell divides, one daughter cell is placed at the same position as the parent cell, and the other is placed one cell diameter away in a uniformly random direction
+        """
+        if torch.sum(self.beta) < self.do_nothing_threshold:
+            return False
+
+        idx = torch.multinomial(self.beta, 1)
+        with torch.no_grad():
+            x0 = self.x[idx, :]
+            p0 = self.p[idx, :]
+            q0 = self.q[idx, :]
+            w0 = self.w[idx]
+            l0 = self.lam[idx, :]
+            b0 = self.beta[idx] * self.beta_decay
+
+            # make a random vector and normalize to get a random direction
+            move = torch.empty_like(x0).normal_()
+            move /= torch.sqrt(torch.sum(move**2, dim=1))[:, None]
+
+            # move the cells so that the center of mass of each pair is at the same place as the mother cell was
+            x0 = x0 - move/2
+            self.x[idx, :] += move/2
+
+            # divide WNT from mother cells evenly to daughter cells
+            self.w[idx] /= 2
+            w0 /= 2
+
+            # append new cell data to the system state
+            self.x = torch.cat((self.x, x0))
+            self.p = torch.cat((self.p, p0))
+            self.q = torch.cat((self.q, q0))
+            self.w = torch.cat((self.w, w0))
+            self.lam = torch.cat((self.lam, l0))
+            self.beta = torch.cat((self.beta, b0))
+
+        # replenish WNT at source cell(s)
+        self.w[self.wnt_cells] = 1
+
+        self.x.requires_grad = True
+        self.p.requires_grad = True
+        self.q.requires_grad = True
+
+        return True

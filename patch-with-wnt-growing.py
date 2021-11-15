@@ -6,15 +6,12 @@ This file should do what Ala suggested:
     - turn off PCP interactions of the immediate neighbors of the WNT cell
     - run the shit forward!
 """
-import plotly.graph_objects as go
 import numpy as np
-import pandas as pd
 import time
 import itertools
 import os
 from polarcore import Polar, PolarWNT
 from initsystems import init_plane
-import plotly.express as px
 import potentials
 import potentials_wnt
 import pickle
@@ -101,6 +98,12 @@ lam[ring] = lam_relax
 beta[index] = 0.025
 beta_decay = 0.5
 
+# Simulation parameters
+timesteps = 200
+yield_every = 500   # save simulation state every x time steps
+diffuse_every = 1
+dt = 0.1
+eta = 5e-3
 
 # align the q field initially becuase if not, the patch will just fall apart into a weird string that loops on itself
 # q0 = np.repeat(np.array([[0., 0., 1.]]), len(q0), axis=0)
@@ -108,52 +111,37 @@ beta_decay = 0.5
 
 # q0 = np.cross(x0, np.array([-1., 0., 0.]))
 
-# set up the simulation object
+# set the potential
+potential = potentials_wnt.potential_nematic
+
 sim = PolarWNT(wnt_cells, wnt_threshold, x0, p0, q0, lam, beta, eta=eta, yield_every=yield_every, device="cuda", init_k=50, beta_decay=beta_decay,
                divide_single=True)
 
 """
 Now I'm going to get WNT to diffuse around from the center cell, then turn on the dynamics and see if the WNT is sufficient to get PCP to spiral
 """
-sim.find_potential_neighbours()
-sim.find_true_neighbours()
-n_diffuse = 10
-for i in range(n_diffuse):
-    sim.get_gradient_averaging()
 
-# visualize the WNT distribution
-df = pd.DataFrame(np.hstack([sim.x.detach().cpu(), sim.w.cpu()[:, None]]),
-                  columns=['x1', 'x2', 'x3', 'w'])
-fig = px.scatter_3d(df, x='x1', y='x2', z='x3',
-                    color='w', range_x=(-10, 10))
-fig.write_html('temp/wnt-on-patch.html', include_plotlyjs='directory',
-               full_html=False)
-# copute the G field and visualize it
-sim.get_gradient_vectors()
-df = pd.DataFrame(np.hstack([sim.x.detach().cpu(), sim.G.detach().cpu()]),
-                  columns=['x1', 'x2', 'x3', 'G1', 'G2', 'G3'])
-fig = go.Figure(data=go.Cone(
-    x=df['x1'],
-    y=df['x2'],
-    z=df['x3'],
-    u=df['G1'],
-    v=df['G2'],
-    w=df['G3'],
-    sizemode='absolute',
-    sizeref=1,
-))
-fig.write_html('temp/wnt_gradient_on_patch.html', include_plotlyjs='directory',
-               full_html=False)
+def division_decider(sim, tstep):
+    """
+    This is a function that decides whether or not to let the cells divide
 
-# declare the potential and start running
-potential = potentials_wnt.potential_nematic
+    Idea: take a sublinear function of time, and allow cell division whenever the value of that function passes an integer
+    This will make cell division happen more rarely as the simulation progresses.
+    """
+    T = sim.dt * tstep
+    if T < 100 or len(sim.x) > max_cells - 1:
+        return False
 
+    def f(T): return 0.05*T
+    if int(f(T)) > int(f(T-sim.dt)):
+        return True
+    else:
+        return False
+
+
+# run!
 runner = sim.simulation(potential=potential,
-                        division_decider=lambda *args: False)
-
-# Simulation parameters
-timesteps = 20
-yield_every = 100   # save simulation state every x time steps
+                        division_decider=division_decider)
 
 data = list()  # For storing data
 i = 0
