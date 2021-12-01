@@ -1,11 +1,11 @@
 import plotly.express as px
 try:
-    from .plotcore import load, build_df
+    from .plotcore import load, build_df_wnt
 except ModuleNotFoundError:
-    from plotcore import load, build_df
+    from plotcore import load, build_df_wnt
 
 
-def plot(df, color = 'x1'):
+def plot(df, color = 'w'):
     range_x = (df['x1'].min(), df['x1'].max())
     range_y = (df['x2'].min(), df['x2'].max())
     range_z = (df['x3'].min(), df['x3'].max())
@@ -26,8 +26,8 @@ def save(fig, fname):
 
 if __name__ == '__main__':
     fname = input('Enter data filename: ')  # 'data/test1.pkl'
-    color = input('color by? (default: x1) ') or 'x1'
+    color = input('color by? (default: w) ') or 'w'
     data, kwargs, fname = load(fname)
-    df, kwargs = build_df(data, kwargs)
+    df, kwargs = build_df_wnt(data, kwargs)
     fig = plot(df, color=color)
     save(fig, fname)

@@ -1,8 +1,19 @@
 import numpy as np
 import pandas as pd
+import os
 import pickle
 
 def load(fname):
+    if fname == "most recent":
+        max_mtime = 0
+        for dirname,subdirs,files in os.walk("./data/"):
+            for file in files:
+                full_path = os.path.join(dirname, file)
+                mtime = os.stat(full_path).st_mtime
+                if mtime > max_mtime:
+                    max_mtime = mtime
+                    max_file = full_path
+        fname = max_file
     print('Loading data from file '+fname)
     with open(fname, 'rb') as f:
         try:
@@ -13,7 +24,7 @@ def load(fname):
     # data[t][0] == x, x[i, k] = position of particle i in dimension k
     # data[t][1] == p, p[i, k] = AB polarity of particle i in dimension k
     # data[t][2] == q, q[i, k] = PCP of particle i in dimension k
-    return data, kwargs
+    return data, kwargs, fname
 
 
 def build_df(data, kwargs=None):

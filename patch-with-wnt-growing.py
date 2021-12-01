@@ -9,16 +9,15 @@ This file should do what Ala suggested:
 import numpy as np
 import time
 import itertools
-import os
 from polarcore import Polar, PolarWNT
 from initsystems import init_plane
 import potentials
 import potentials_wnt
 import pickle
-import torch
 
 # simulation parameters
-save_name = 'patch-with-wnt'
+ic_name = 'patch-with-wnt'
+save_name = 'patch-with-wnt-growing'
 max_cells = 1000
 
 # get initial condition
@@ -52,7 +51,7 @@ runner = sim.simulation(potential=potential,
                         division_decider=lambda *args: False)
 
 try:
-    with open(f'data/ic/{save_name}.pkl', 'rb') as fobj:
+    with open(f'data/ic/{ic_name}.pkl', 'rb') as fobj:
         data, kwargs = pickle.load(fobj)
         x0, p0, q0, lam = data[-1]
 except:
@@ -80,7 +79,7 @@ except:
 # find the cell closest to the center and make it the WNT cell
 index = np.argmin(np.sum(x0**2, axis=1))
 wnt_cells = [index]
-wnt_threshold = 1e-2
+wnt_threshold = 1e-1
 
 # find the next ring of cells - the immediate neighbors of the WNT cell
 sim.find_potential_neighbours()
@@ -88,7 +87,7 @@ sim.find_true_neighbours()
 ring = sim.idx[index].cpu()
 
 # set lambda parameters - here the WNT cell and its neighbors should not interact via PCP (i.e. lam2 and lam3 are zero)
-lam_WNT = np.array([0, 0.5, 0.2, 0.1, 0.2])
+lam_WNT = np.array([0, 0.4, 0.3, 0.05, .25])
 lam = np.repeat(lam_WNT[None, :], len(x), axis=0)
 lam[index] = lam_relax
 lam[ring] = lam_relax
@@ -117,6 +116,12 @@ potential = potentials_wnt.potential_nematic
 sim = PolarWNT(wnt_cells, wnt_threshold, x0, p0, q0, lam, beta, eta=eta, yield_every=yield_every, device="cuda", init_k=50, beta_decay=beta_decay,
                divide_single=True)
 
+sim.find_potential_neighbours()
+sim.find_true_neighbours()
+n_diffuse = 10
+for i in range(n_diffuse):
+    sim.get_gradient_averaging()
+
 """
 Now I'm going to get WNT to diffuse around from the center cell, then turn on the dynamics and see if the WNT is sufficient to get PCP to spiral
 """
@@ -129,10 +134,10 @@ def division_decider(sim, tstep):
     This will make cell division happen more rarely as the simulation progresses.
     """
     T = sim.dt * tstep
-    if T < 100 or len(sim.x) > max_cells - 1:
+    if T < 1000 or len(sim.x) > max_cells - 1:
         return False
 
-    def f(T): return 0.05*T
+    def f(T): return 0.15*T
     if int(f(T)) > int(f(T-sim.dt)):
         return True
     else:
@@ -153,8 +158,8 @@ for line in itertools.islice(runner, timesteps):
     print(
         f'Running {i} of {timesteps}   ({yield_every * i} of {yield_every * timesteps})   ({len(line[0])} cells)')
     data.append(line)
-    # if i>0 and i % diffuse_every == 0:
-    #     sim.get_gradient_averaging()
+    if i>0 and i % diffuse_every == 0:
+        sim.get_gradient_averaging()
 
     if len(line[0]) > max_cells:
         print('Stopping')

@@ -21,7 +21,8 @@ import pickle
 import torch
 
 # simulation parameters
-save_name = 'patch-with-wnt'
+save_name = 'patch-with-pcp'
+ic_name = 'patch-with-wnt'
 max_cells = 1000
 
 # get initial condition
@@ -55,10 +56,10 @@ runner = sim.simulation(potential=potential,
                         division_decider=lambda *args: False)
 
 try:
-    with open(f'data/ic/{save_name}.pkl', 'rb') as fobj:
+    with open(f'data/ic/{ic_name}.pkl', 'rb') as fobj:
         data, kwargs = pickle.load(fobj)
         x0, p0, q0, lam = data[-1]
-except:
+except FileNotFoundError:
     data = list()  # For storing data
     i = 0
     t1 = time.time()
@@ -78,58 +79,23 @@ except:
         pickle.dump([data, sim.__dict__], fobj)
     x0, p0, q0, lam = data[-1]
 
-# now set up the WNT at the center of the cell sheet, and turn on the other coupling terms.
 
-# find the cell closest to the center and make it the WNT cell
-index = np.argmin(np.sum(x0**2, axis=1))
-wnt_cells = [index]
-wnt_threshold = 1e-2
+# set lambda parameters - here I just turn on PCP and try to get it to align with itself and perpendicular to AB
+lam_PCP = np.array([0, 0.7, 0.2, 0.1])
+lam = np.repeat(lam_PCP[None, :], len(x), axis=0)
 
-# find the next ring of cells - the immediate neighbors of the WNT cell
-sim.find_potential_neighbours()
-sim.find_true_neighbours()
-ring = sim.idx[index].cpu()
+potential = potentials.potential_nematic
 
-# set lambda parameters - here the WNT cell and its neighbors should not interact via PCP (i.e. lam2 and lam3 are zero)
-lam_WNT = np.array([0.0, .4, .3, .05, 0.25])
-lam = np.repeat(lam_WNT[None, :], len(x), axis=0)
-lam[index] = lam_relax
-lam[ring] = lam_relax
+sim = Polar(x, p, q, lam, beta, eta=eta, yield_every=yield_every, device="cuda", init_k=50, beta_decay=beta_decay,
+            divide_single=True)
 
-
-# set division rate and decay-of-division-rate rate
-beta[index] = 0.025
-beta_decay = 0.5
-
-
-# align the q field initially becuase if not, the patch will just fall apart into a weird string that loops on itself
-# q0 = np.repeat(np.array([[0., 0., 1.]]), len(q0), axis=0)
-# q0 += np.mean(p0) * 0.1
-
-# q0 = np.cross(x0, np.array([-1., 0., 0.]))
-
-# set up the simulation object
-sim = PolarWNT(wnt_cells, wnt_threshold, x0, p0, q0, lam, beta, eta=eta, yield_every=yield_every, device="cuda", init_k=50, beta_decay=beta_decay,
-               divide_single=True)
-
-"""
-Now I'm going to get WNT to diffuse around from the center cell, then turn on the dynamics and see if the WNT is sufficient to get PCP to spiral
-"""
-sim.find_potential_neighbours()
-sim.find_true_neighbours()
-n_diffuse = 10
-for i in range(n_diffuse):
-    sim.get_gradient_averaging()
-
-# declare the potential and start running
-potential = potentials_wnt.potential_nematic
-
+# do the initial phase: relax the initial condition
 runner = sim.simulation(potential=potential,
                         division_decider=lambda *args: False)
 
 # Simulation parameters
-timesteps = 200
-yield_every = 100   # save simulation state every x time steps
+timesteps = 100
+yield_every = 200   # save simulation state every x time steps
 
 data = list()  # For storing data
 i = 0

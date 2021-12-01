@@ -21,13 +21,13 @@ def plot(df):
     return fig
 
 def save(fig):
-    fig.write_html(f'{fname.replace("data","animations")}_vectorfield.html',
+    fig.write_html(fname.replace('data','animations').replace('.pkl','_vectorfield.html'),
                    include_plotlyjs='directory', full_html=False, animation_opts={'frame': {'duration': 100}})
 
 if __name__ == "__main__":
     fname = input('Enter data filename: ')  # 'data/test1.pkl'
     T_plot = int(input('timestep to plot: ') or -1)
-    data, kwargs = load(fname)
+    data, kwargs, fname = load(fname)
     df, kwargs = build_df_wnt(data, kwargs)
     df_t = select(df, T_plot, kwargs)
     fig = plot(df_t)

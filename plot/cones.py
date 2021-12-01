@@ -1,6 +1,9 @@
 import plotly.graph_objects as go
 
-from .plotcore import load, build_df, select
+try:
+    from .plotcore import load, build_df, select
+except ModuleNotFoundError:
+    from plotcore import load, build_df, select
 
 def plot(df):
     fig = go.Figure(data=[go.Cone(
@@ -20,15 +23,15 @@ def plot(df):
     fig.for_each_scene(fun)
     return fig
 
-def save(fig, fname):
-    fig.write_html(f'animations/{fname[5:-4]}_vectorfield.html',
+def save(fig, fname, T_plot):
+    fig.write_html(fname.replace('data','animations').replace('.pkl',f'_vectorfield_t_{T_plot}.html'),
                    include_plotlyjs='directory', full_html=False, animation_opts={'frame': {'duration': 100}})
 
 if __name__ == "__main__":
     fname = input('Enter data filename: ')  # 'data/test1.pkl'
-    T_plot = int(input('timestep to plot: ') or -1)
-    data, kwargs = load(fname)
+    data, kwargs, fname = load(fname)
+    T_plot = int(input('timestep to plot: ') or len(data)-1)
     df, kwargs = build_df(data, kwargs)
     df_t = select(df, T_plot, kwargs)
     fig = plot(df_t)
-    save(fig, fname)
+    save(fig, fname, T_plot)

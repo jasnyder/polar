@@ -16,7 +16,7 @@ import pickle
 import torch
 
 
-save_name = 'tube-bulge-nematic-wnt'
+save_name = 'tube-bulge-two-wnt'
 max_cells = 3000
 
 # Grab tube initial condition from log
@@ -29,13 +29,13 @@ lam = lam_0
 eta = 1e-2  # noise
 
 # Make two cells polar and divide them faster
-index = np.argmin(x[:, 0])
+index = np.array([np.argmin(x[:, 0]), np.argmax(x[:, 0])])
 lam = np.repeat(lam[None, :], len(x), axis=0)
 
 beta[index] = 1
-beta_decay = 0.5
+beta_decay = 0.25
 
-wnt_cells = [index]
+wnt_cells = index
 wnt_threshold = 1e-1
 diffuse_every = 1
 

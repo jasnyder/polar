@@ -1,4 +1,8 @@
 """
+This file will 
+"""
+
+"""
 This file is to run a simulation using the newly-modified code base.
 
 Makes PCP interactions nematic, i.e. not having a preferred direction
@@ -16,31 +20,34 @@ import pickle
 import torch
 
 
-save_name = 'tube-bulge-nematic-wnt'
+save_name = 'sphere-wnt'
 max_cells = 3000
 
-# Grab tube initial condition from log
-with open('data/ic/relaxed-tube-around.pkl', 'rb') as fobj:
+# Grab sphere initial condition from log
+n = 1000
+with open(f'data/ic/relaxed-sphere-n-{n}.pkl', 'rb') as fobj:
     x, p, q = pickle.load(fobj)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
-lam_0 = np.array([0.0, .4, .3, .05, 0.25])
+lam_0 = np.array([0.0, .35, .225, .075, 0.35])
 lam = lam_0
 eta = 1e-2  # noise
 
-# Make two cells polar and divide them faster
-index = np.argmin(x[:, 0])
+# Pick some number of cells to be WNT cells and make them divide
+n_wnt = 3
+index = np.random.randint(len(x), size = n_wnt)
 lam = np.repeat(lam[None, :], len(x), axis=0)
 
+# update beta (division rate) parameters and beta_decay: factor by which daughter cells have beta reduced
 beta[index] = 1
-beta_decay = 0.5
+beta_decay = 0
 
-wnt_cells = [index]
+wnt_cells = index
 wnt_threshold = 1e-1
 diffuse_every = 1
 
 # Simulation parameters
-timesteps = 200
+timesteps = 300
 yield_every = 500   # save simulation state every x time steps
 dt = 0.1
 
@@ -99,7 +106,7 @@ try:
     os.mkdir('data')
 except:
     pass
-with open('data/'+save_name+'.pkl', 'wb') as f:
+with open(f'data/{save_name}-n-{n}-n_wnt-{n_wnt}-{time.strftime("%d%b%Y-%H-%M-%S")}.pkl', 'wb') as f:
     pickle.dump([data, sim.__dict__], f)
 
 print(f'Simulation done, saved {timesteps} datapoints')
