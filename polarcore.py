@@ -537,9 +537,10 @@ class Polar:
 
 
 class PolarWNT(Polar):
-    def __init__(self, wnt_cells = None, wnt_threshold = 1e-2, *args, **kwargs):
+    def __init__(self, *args, wnt_cells = None, wnt_threshold = 1e-2, wnt_decay = 0, **kwargs):
         self.wnt_cells = wnt_cells
         self.wnt_threshold = wnt_threshold
+        self.wnt_decay = wnt_decay
         super().__init__(*args, **kwargs)
         # initialize a G (WNT gradient) vector as zeros
         self.G = torch.zeros_like(self.x)
@@ -745,6 +746,7 @@ class PolarWNT(Polar):
             
             self.get_gradient_vectors()
             self.gradient_step(tstep, potential=potential)
+            self.w = self.w * np.exp(self.dt * self.wnt_decay)
 
             if tstep % self.yield_every == 0:
                 xx = self.x.detach().to("cpu").numpy().copy()

@@ -1,9 +1,5 @@
 """
-This file is to run a simulation using the newly-modified code base.
-
-Makes PCP interactions nematic, i.e. not having a preferred direction
-
-Includes at least one WNT-producing cell
+This file will simulate a sphere of cells with WNT and PCP, gets it to a certain point, then switches the WNT interaction off
 """
 import numpy as np
 import time
@@ -16,32 +12,36 @@ import pickle
 import torch
 
 
-save_name = 'tube-bulge-two-wnt'
+save_name = 'sphere-wnt-switch-off'
 max_cells = 3000
 
-# Grab tube initial condition from log
-with open('data/ic/relaxed-tube-around.pkl', 'rb') as fobj:
+# Grab sphere initial condition from log
+n = 1000
+with open(f'data/ic/relaxed-sphere-n-{n}.pkl', 'rb') as fobj:
     x, p, q = pickle.load(fobj)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
-lam_0 = np.array([0.0, .4, .3, .05, 0.25])
+lam_0 = np.array([0.0, .35, .225, .075, 0.35])
 lam = lam_0
 eta = 1e-2  # noise
 
-# Make two cells polar and divide them faster
-index = np.array([np.argmin(x[:, 0]), np.argmax(x[:, 0])])
+# Pick some number of cells to be WNT cells and make them divide
+n_wnt = 3
+index = np.random.randint(len(x), size=n_wnt)
 lam = np.repeat(lam[None, :], len(x), axis=0)
 
+# update beta (division rate) parameters and beta_decay: factor by which daughter cells have beta reduced
 beta[index] = 1
-beta_decay = 0.25
+beta_decay = 0
 
 wnt_cells = index
 wnt_threshold = 1e-1
 diffuse_every = 1
 
 # Simulation parameters
-timesteps = 200
-yield_every = 500   # save simulation state every x time steps
+timesteps = 3
+yield_every = 5   # save simulation state every x time steps
+switch_wnt_off_at = 225
 dt = 0.1
 
 # Potential
@@ -67,7 +67,7 @@ def division_decider(sim, tstep):
 
 
 # Make the simulation runner object:
-sim = PolarWNT(x, p, q, lam, beta, wnt_cells=wnt_cells, wnt_threshold = wnt_threshold, eta=eta, yield_every=yield_every,
+sim = PolarWNT(x, p, q, lam, beta, wnt_cells=wnt_cells, wnt_threshold=wnt_threshold, eta=eta, yield_every=yield_every,
                device="cuda", init_k=50, beta_decay=beta_decay, divide_single=True)
 sim.find_potential_neighbours()
 sim.find_true_neighbours()
@@ -88,8 +88,14 @@ for line in itertools.islice(runner, timesteps):
     print(
         f'Running {i} of {timesteps}   ({yield_every * i} of {yield_every * timesteps})   ({len(line[0])} cells)')
     data.append(line)
-    if i>0 and i % diffuse_every == 0:
+    if i > 0 and i % diffuse_every == 0:
         sim.get_gradient_averaging()
+    if i == switch_wnt_off_at:
+        lam_0[4] = 0
+        lam_0 = lam_0 / lam_0.sum()
+        print('switching WNT off')
+        sim.lam = torch.tensor(np.repeat(lam_0[None, :], len(
+            sim.x), axis=0), dtype=sim.dtype, device=sim.device)
 
     if len(line[0]) > max_cells:
         print('Stopping')
@@ -99,7 +105,7 @@ try:
     os.mkdir('data')
 except:
     pass
-with open('data/'+save_name+'.pkl', 'wb') as f:
+with open(f'data/{save_name}-n-{n}-n_wnt-{n_wnt}-{time.strftime("%d%b%Y-%H-%M-%S")}.pkl', 'wb') as f:
     pickle.dump([data, sim.__dict__], f)
 
 print(f'Simulation done, saved {timesteps} datapoints')

@@ -109,7 +109,7 @@ beta_decay = 0.5
 # q0 = np.cross(x0, np.array([-1., 0., 0.]))
 
 # set up the simulation object
-sim = PolarWNT(wnt_cells, wnt_threshold, x0, p0, q0, lam, beta, eta=eta, yield_every=yield_every, device="cuda", init_k=50, beta_decay=beta_decay,
+sim = PolarWNT(x0, p0, q0, lam, beta, wnt_cells=wnt_cells, wnt_threshold = wnt_threshold, eta=eta, yield_every=yield_every, device="cuda", init_k=50, beta_decay=beta_decay,
                divide_single=True)
 
 """

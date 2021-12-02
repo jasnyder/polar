@@ -74,7 +74,7 @@ def division_decider(sim, tstep):
 
 
 # Make the simulation runner object:
-sim = PolarWNT(wnt_cells, wnt_threshold, x, p, q, lam, beta, eta=eta, yield_every=yield_every,
+sim = PolarWNT(x, p, q, lam, beta, wnt_cells=wnt_cells, wnt_threshold = wnt_threshold, eta=eta, yield_every=yield_every,
                device="cuda", init_k=50, beta_decay=beta_decay, divide_single=True)
 sim.find_potential_neighbours()
 sim.find_true_neighbours()

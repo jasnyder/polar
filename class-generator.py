@@ -15,11 +15,17 @@ class MyClass():
             self.x += -self.step*self.x.grad
         self.x.grad.zero_()
 
+class A:
+    def __init__(self, x, a = 3):
+        self.a = a
+        self.x = x
+
+class B(A):
+    def __init__(self, *args, b = 2, **kwargs):
+        self.b = b
+        super().__init__(*args, **kwargs)
+
+
 if __name__=='__main__':
-    x = 3
-    fun = lambda x : x**2
-    foo = MyClass(x, fun)
-    for i in range(50):
-        foo.apply()
-        foo.grad_step()
-        print(foo.x)
+    bb = B('x', a = 6, b = 8)
+    print(bb.__dict__)

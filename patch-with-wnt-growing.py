@@ -113,7 +113,7 @@ eta = 5e-3
 # set the potential
 potential = potentials_wnt.potential_nematic
 
-sim = PolarWNT(wnt_cells, wnt_threshold, x0, p0, q0, lam, beta, eta=eta, yield_every=yield_every, device="cuda", init_k=50, beta_decay=beta_decay,
+sim = PolarWNT(x0, p0, q0, lam, beta, wnt_cells=wnt_cells, wnt_threshold = wnt_threshold, eta=eta, yield_every=yield_every, device="cuda", init_k=50, beta_decay=beta_decay,
                divide_single=True)
 
 sim.find_potential_neighbours()
