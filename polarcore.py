@@ -612,7 +612,7 @@ class PolarWNT(Polar):
 
             # Calculate weights tensors
             w_ii = self.w[:, None].expand(self.w.shape[0], self.idx.shape[1])
-            w_ij = torch.zeros_like(w_ii)
+            w_ij = torch.zeros_like(w_ii)       # w_ij is zero for all non-weighted cells i
             w_ij[weighted_cells, :] = self.w[self.idx[weighted_cells]]
 
             # Normalize dx compute G

@@ -29,7 +29,7 @@ with open(f'data/ic/relaxed-sphere-n-{n}.pkl', 'rb') as fobj:
     x, p, q = pickle.load(fobj)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
-lam_0 = np.array([0.0, .35, .225, .075, 0.35])
+lam_0 = np.array([0.0, .35, .325, .075, 0.25])
 lam = lam_0
 eta = 1e-2  # noise
 
@@ -45,6 +45,7 @@ beta_decay = 0
 wnt_cells = index
 wnt_threshold = 1e-1
 diffuse_every = 1
+wnt_decay = -1e-3
 
 # Simulation parameters
 timesteps = 300
@@ -74,7 +75,7 @@ def division_decider(sim, tstep):
 
 
 # Make the simulation runner object:
-sim = PolarWNT(x, p, q, lam, beta, wnt_cells=wnt_cells, wnt_threshold = wnt_threshold, eta=eta, yield_every=yield_every,
+sim = PolarWNT(x, p, q, lam, beta, wnt_cells=wnt_cells, wnt_threshold = wnt_threshold, wnt_decay=wnt_decay, eta=eta, yield_every=yield_every,
                device="cuda", init_k=50, beta_decay=beta_decay, divide_single=True)
 sim.find_potential_neighbours()
 sim.find_true_neighbours()

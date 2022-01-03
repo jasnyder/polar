@@ -39,8 +39,8 @@ wnt_threshold = 1e-1
 diffuse_every = 1
 
 # Simulation parameters
-timesteps = 3
-yield_every = 5   # save simulation state every x time steps
+timesteps = 300
+yield_every = 500   # save simulation state every x time steps
 switch_wnt_off_at = 225
 dt = 0.1
 
@@ -92,7 +92,6 @@ for line in itertools.islice(runner, timesteps):
         sim.get_gradient_averaging()
     if i == switch_wnt_off_at:
         lam_0[4] = 0
-        lam_0 = lam_0 / lam_0.sum()
         print('switching WNT off')
         sim.lam = torch.tensor(np.repeat(lam_0[None, :], len(
             sim.x), axis=0), dtype=sim.dtype, device=sim.device)

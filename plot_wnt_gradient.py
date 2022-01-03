@@ -1,12 +1,10 @@
 import plotly.graph_objects as go
 import numpy as np
+import torch
 
-try:
-    from .plotcore import load, build_df_wnt, select
-except ModuleNotFoundError:
-    from plotcore import load, build_df_wnt, select
+from plot.plotcore import load, build_df_wnt, select
 
-from ..polarcore import PolarWNT
+from polarcore import PolarWNT
 
 
 def compute_WNT_gradient(df, kwargs):
@@ -17,9 +15,18 @@ def compute_WNT_gradient(df, kwargs):
     x = np.vstack([df['x1'], df['x2'], df['x3']]).T
     p = np.vstack([df['p1'], df['p2'], df['p3']]).T
     q = np.vstack([df['q1'], df['q2'], df['q3']]).T
-    w = df['w']
-    sim = PolarWNT(kwargs['wnt_cells'], kwargs['wnt_threshold'], x, p, q,
-                   kwargs['lam'], kwargs['beta'], kwargs['eta'], kwargs['yield_every'])
+    w = torch.tensor(np.array(df['w']))
+    print(type(w))
+    lam = kwargs['lam']
+    beta = kwargs['beta']
+    wnt_cells = kwargs['wnt_cells']
+    wnt_threshold = kwargs['wnt_threshold']
+    wnt_decay = kwargs['wnt_decay']
+    eta = kwargs['eta']
+    yield_every = kwargs['yield_every']
+    beta_decay = kwargs['beta_decay']
+    sim = PolarWNT(x, p, q, lam, beta, wnt_cells=wnt_cells, wnt_threshold = wnt_threshold, wnt_decay=wnt_decay, eta=eta, yield_every=yield_every,
+               device="cpu", init_k=50, beta_decay=beta_decay, divide_single=True)
     sim.w = w
     sim.find_potential_neighbours()
     Gtilde, w = sim.get_gradient_vectors()
