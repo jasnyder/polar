@@ -623,7 +623,7 @@ class PolarWNT(Polar):
 
             # Project G vectors so divisions occur in cell-cell-plane and normalize
             G_tilde = -torch.cross(torch.cross(G, self.p), self.p)  # Note the minus!
-            G_tilde = G
+            # G_tilde = G
             d_G_tilde = torch.sqrt(torch.sum(G_tilde ** 2, dim=1))
             G_tilde[weighted_cells] /= d_G_tilde[weighted_cells, None]
         self.G = G_tilde
