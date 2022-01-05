@@ -16,9 +16,8 @@ def compute_WNT_gradient(df, kwargs):
     p = np.vstack([df['p1'], df['p2'], df['p3']]).T
     q = np.vstack([df['q1'], df['q2'], df['q3']]).T
     w = torch.tensor(np.array(df['w']))
-    print(type(w))
-    lam = kwargs['lam']
-    beta = kwargs['beta']
+    lam = np.array(kwargs['lam'].cpu())[:len(x)]
+    beta = np.array(kwargs['beta'].cpu())[:len(x)]
     wnt_cells = kwargs['wnt_cells']
     wnt_threshold = kwargs['wnt_threshold']
     wnt_decay = kwargs['wnt_decay']
@@ -26,7 +25,7 @@ def compute_WNT_gradient(df, kwargs):
     yield_every = kwargs['yield_every']
     beta_decay = kwargs['beta_decay']
     sim = PolarWNT(x, p, q, lam, beta, wnt_cells=wnt_cells, wnt_threshold = wnt_threshold, wnt_decay=wnt_decay, eta=eta, yield_every=yield_every,
-               device="cpu", init_k=50, beta_decay=beta_decay, divide_single=True)
+               device="cpu", init_k=50, beta_decay=beta_decay, divide_single=True, dtype = torch.float64)
     sim.w = w
     sim.find_potential_neighbours()
     Gtilde, w = sim.get_gradient_vectors()

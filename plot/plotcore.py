@@ -57,15 +57,10 @@ def build_df_wnt(data, kwargs = None):
     return df, kwargs
 
 
-def select(df, T_plot, kwargs=None):
-    if kwargs is None:
-        ye = 1
-        dt = 1
-    else:
-        ye = kwargs['yield_every']
-        dt = kwargs['dt']
+def select(df, T_plot, kwargs = None):
     if T_plot == -1:
         tt = df['t'].max()
     else:
-        tt = T_plot * ye * dt
-    return df.loc[df['t'] == tt]
+        tt = df.loc[np.argmin((df['t']-5750)**2), 't']
+    mask = df['t']==tt
+    return df[mask].copy()
