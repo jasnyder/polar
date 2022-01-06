@@ -61,6 +61,6 @@ def select(df, T_plot, kwargs = None):
     if T_plot == -1:
         tt = df['t'].max()
     else:
-        tt = df.loc[np.argmin((df['t']-5750)**2), 't']
+        tt = df.loc[np.argmin((df['t']-T_plot)**2), 't']
     mask = df['t']==tt
     return df[mask].copy()

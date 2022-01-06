@@ -31,6 +31,8 @@ def potential_nematic(x, d, dx, lam_i, lam_j, pi, pj, qi, qj, Gi):
 def potential_nematic_reweight(x, d, dx, lam_i, lam_j, pi, pj, qi, qj, Gi):
     """
     Implements the nematic potential and re-weights lambda at cells whose WNT is below threshold
+
+    to detect which cells have WNT level below threshold, check the norm of Gi
     """
     S1 = torch.sum(torch.cross(pj, dx, dim=2) *
                    torch.cross(pi, dx, dim=2), dim=2)
@@ -50,6 +52,8 @@ def potential_nematic_reweight(x, d, dx, lam_i, lam_j, pi, pj, qi, qj, Gi):
     mask1 = 1 * (lam1[:, :, 0] > 0.5)
 
     lam = lam1 * (1 - mask1[:, :, None]) + lam2 * mask1[:, :, None]
+    reweight_mask = ((Gi**2).sum(axis=2).mean(axis=1) < 0.999)
+    lam[reweight_mask, :, :] /= lam[reweight_mask, :, :-1].sum(axis=-1)[:, :, None].expand(reweight_mask.sum(), lam.shape[1], lam.shape[2])
 
     # Calculate semi-nematic potential
     S = lam[:, :, 0] + lam[:, :, 1] * S1 + \

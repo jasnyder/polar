@@ -1,14 +1,3 @@
-"""
-This file will 
-"""
-
-"""
-This file is to run a simulation using the newly-modified code base.
-
-Makes PCP interactions nematic, i.e. not having a preferred direction
-
-Includes at least one WNT-producing cell
-"""
 import numpy as np
 import time
 import itertools
@@ -20,7 +9,7 @@ import pickle
 import torch
 
 
-save_name = 'sphere-wnt'
+save_name = 'sphere-wnt-reweighting'
 max_cells = 10000
 
 # Grab sphere initial condition from log
@@ -54,7 +43,7 @@ yield_every = 1500   # save simulation state every x time steps
 dt = 0.1
 
 # Potential
-potential = potentials_wnt.potential_nematic
+potential = potentials_wnt.potential_nematic_reweight
 
 
 def division_decider(sim, tstep):
@@ -83,6 +72,7 @@ sim.find_true_neighbours()
 n_diffuse = 10
 for i in range(n_diffuse):
     sim.get_gradient_averaging()
+
 runner = sim.simulation(potential=potential,
                         division_decider=division_decider)
 
