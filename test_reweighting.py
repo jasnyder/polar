@@ -23,7 +23,7 @@ lam = lam_0
 eta = 1e-2  # noise
 
 # Pick some number of cells to be WNT cells and make them divide
-n_wnt = 10
+n_wnt = 5
 index = np.random.randint(len(x), size = n_wnt)
 lam = np.repeat(lam[None, :], len(x), axis=0)
 
@@ -38,7 +38,7 @@ diffuse_multiple = 2
 wnt_decay = -1e-3
 
 # Simulation parameters
-timesteps = 150
+timesteps = 100
 yield_every = 1500   # save simulation state every x time steps
 dt = 0.1
 
