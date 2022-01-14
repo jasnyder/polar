@@ -43,15 +43,16 @@ def build_df(data, kwargs=None):
                       't', 'i', 'x1', 'x2', 'x3', 'p1', 'p2', 'p3', 'q1', 'q2', 'q3'])
     return df, kwargs
 
-def build_df_wnt(data, kwargs = None):
+def build_df_wnt(data, kwargs = None, skipframes = 1):
     row_chunks = list()
     for t, dat in enumerate(data):
-        if kwargs is not None:
-            T = kwargs['dt'] * kwargs['yield_every'] * t
-        else:
-            T = t
-        n = dat[0].shape[0]
-        row_chunks.append(np.hstack([np.ones((n,1)) * T, np.arange(n)[:,np.newaxis], dat[0], dat[1], dat[2], dat[3][:,None]]))
+        if t%skipframes==0:
+            if kwargs is not None:
+                T = kwargs['dt'] * kwargs['yield_every'] * t
+            else:
+                T = t
+            n = dat[0].shape[0]
+            row_chunks.append(np.hstack([np.ones((n,1)) * T, np.arange(n)[:,np.newaxis], dat[0], dat[1], dat[2], dat[3][:,None]]))
 
     df = pd.DataFrame(np.vstack(row_chunks), columns = ['t', 'i', 'x1', 'x2', 'x3', 'p1', 'p2', 'p3', 'q1', 'q2', 'q3', 'w'])
     return df, kwargs

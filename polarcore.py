@@ -601,7 +601,24 @@ class PolarWNT(Polar):
         self.lam = lam
         return
 
-    def get_gradient_vectors(self):
+    def get_gradient_vectors_better(self):
+        self.find_true_neighbours()
+        dx = self.dx.clone()
+        d = self.d.clone()
+        with torch.no_grad():
+            # Calculate weights tensors
+            w_ii = self.w[:, None].expand(self.w.shape[0], self.idx.shape[1])
+            w_ij = torch.zeros_like(w_ii)       # w_ij is zero for all non-weighted cells i
+            w_ij = self.w[self.idx] # if cell i has w>threshold, then the i-th row of w_ij will have the w-values of all of its neighbors
+
+            Gij = (-w_ii[:, :, None] + w_ij[:, :, None]) * dx / d[:,:,None]**2
+            G = torch.sum(self.z_mask[:, :, None].float() * Gij, dim=1)
+        self.G = G
+        return G, self.w
+
+    def get_gradient_vectors(self, better = False):
+        if better:
+            return self.get_gradient_vectors_better()
         # Compute gradient vectors
         self.find_true_neighbours()
         dx = self.dx.clone()
@@ -613,11 +630,11 @@ class PolarWNT(Polar):
             # Calculate weights tensors
             w_ii = self.w[:, None].expand(self.w.shape[0], self.idx.shape[1])
             w_ij = torch.zeros_like(w_ii)       # w_ij is zero for all non-weighted cells i
-            w_ij[weighted_cells, :] = self.w[self.idx[weighted_cells]]
+            w_ij[weighted_cells, :] = self.w[self.idx[weighted_cells]] # if cell i has w>threshold, then the i-th row of w_ij will have the w-values of all of its neighbors
 
             # Normalize dx compute G
             d_dx = torch.sqrt(torch.sum(dx ** 2, dim=2))
-            dx /= d_dx[:, :, None]
+            dx /= d_dx[:, :, None]              # dx[i,j,:] is the unit vector pointing from cell i to cell j. shape is (N, idx.shape[1], 3)
             Gij = (w_ii[:, :, None] + w_ij[:, :, None]) * dx
             G = torch.sum(self.z_mask[:, :, None].float() * Gij, dim=1)
 
@@ -669,7 +686,7 @@ class PolarWNT(Polar):
 
         return V, int(m)
 
-    def simulation(self, potential, division_decider = lambda *args : True):
+    def simulation(self, potential, division_decider = lambda *args : True, better_WNT_gradient = False):
         """
         Generator to implement the simulation
 
@@ -744,7 +761,7 @@ class PolarWNT(Polar):
             if division or tstep % n_update == 0 or self.idx is None:
                 self.find_potential_neighbours()
             
-            self.get_gradient_vectors()
+            self.get_gradient_vectors(better=better_WNT_gradient)
             self.gradient_step(tstep, potential=potential)
             self.w = self.w * np.exp(self.dt * self.wnt_decay)
 
