@@ -28,9 +28,9 @@ def save(fig, fname, T_plot):
                    include_plotlyjs='directory', full_html=False, animation_opts={'frame': {'duration': 100}})
 
 if __name__ == "__main__":
-    fname = input('Enter data filename: ')  # 'data/test1.pkl'
+    fname = input('Enter data filename (default: most recent): ')  or 'most recent'# 'data/test1.pkl'
     data, kwargs, fname = load(fname)
-    T_plot = int(input('timestep to plot: ') or len(data)-1)
+    T_plot = int(input('timestep to plot (default: last): ') or -1)
     df, kwargs = build_df(data, kwargs)
     df_t = select(df, T_plot, kwargs)
     fig = plot(df_t)

@@ -608,13 +608,35 @@ class PolarWNT(Polar):
         with torch.no_grad():
             # Calculate weights tensors
             w_ii = self.w[:, None].expand(self.w.shape[0], self.idx.shape[1])
-            w_ij = torch.zeros_like(w_ii)       # w_ij is zero for all non-weighted cells i
-            w_ij = self.w[self.idx] # if cell i has w>threshold, then the i-th row of w_ij will have the w-values of all of its neighbors
-
+            w_ij = self.w[self.idx]
             Gij = (-w_ii[:, :, None] + w_ij[:, :, None]) * dx / d[:,:,None]**2
-            G = torch.sum(self.z_mask[:, :, None].float() * Gij, dim=1)
+            G = torch.mean(self.z_mask[:, :, None].float() * Gij, dim=1)
         self.G = G
         return G, self.w
+
+    def get_gradient_vectors_unnormalized(self, project = False):
+        self.find_true_neighbours()
+        dx = self.dx.clone()
+        d = self.d.clone()
+        with torch.no_grad():
+            # Count Paneth cells as weighted cells only inside this function to establish gradient
+            weighted_cells = torch.where(self.w >= self.wnt_threshold)[0]
+
+            # Calculate weights tensors
+            w_ii = self.w[:, None].expand(self.w.shape[0], self.idx.shape[1])
+            w_ij = torch.zeros_like(w_ii)       # w_ij is zero for all non-weighted cells i
+            w_ij[weighted_cells, :] = self.w[self.idx[weighted_cells]] # if cell i has w>threshold, then the i-th row of w_ij will have the w-values of all of its neighbors
+
+            # Normalize dx compute G
+            d_dx = torch.sqrt(torch.sum(dx ** 2, dim=2))
+            dx /= d_dx[:, :, None]              # dx[i,j,:] is the unit vector pointing from cell i to cell j. shape is (N, idx.shape[1], 3)
+            Gij = (w_ii[:, :, None] + w_ij[:, :, None]) * dx
+            G = torch.sum(self.z_mask[:, :, None].float() * Gij, dim=1)
+            if project:
+                G = -torch.cross(torch.cross(G, self.p), self.p)
+        self.G = G
+        return G, self.w
+    
 
     def get_gradient_vectors(self, better = False):
         if better:

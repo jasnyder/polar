@@ -25,7 +25,7 @@ def save(fig, fname):
 
 
 if __name__ == '__main__':
-    fname = input('Enter data filename: ')  # 'data/test1.pkl'
+    fname = input('Enter data filename (default: most recent): ') or 'most recent' # 'data/test1.pkl'
     color = input('color by? (default: w) ') or 'w'
     data, kwargs, fname = load(fname)
     df, kwargs = build_df_wnt(data, kwargs)

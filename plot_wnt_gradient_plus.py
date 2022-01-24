@@ -7,7 +7,7 @@ from plot.plotcore import load, build_df_wnt, select
 from polarcore import PolarWNT
 
 
-def compute_WNT_gradient(df, kwargs, better_wnt_gradient=False, normalize=False, threshold=False):
+def compute_WNT_gradient(df, kwargs, project = False):
     """
     takes a dataframe of a single timeslice and builds a PolarWNT object
     the PolarWNT object knows how to find potential/true neighbors, and compute WNT gradients
@@ -24,21 +24,16 @@ def compute_WNT_gradient(df, kwargs, better_wnt_gradient=False, normalize=False,
     eta = kwargs['eta']
     yield_every = kwargs['yield_every']
     beta_decay = kwargs['beta_decay']
-    sim = PolarWNT(x, p, q, lam, beta, wnt_cells=wnt_cells, wnt_threshold=wnt_threshold, wnt_decay=wnt_decay, eta=eta, yield_every=yield_every,
-                   device="cpu", init_k=50, beta_decay=beta_decay, divide_single=True, dtype=torch.float64)
+    sim = PolarWNT(x, p, q, lam, beta, wnt_cells=wnt_cells, wnt_threshold = wnt_threshold, wnt_decay=wnt_decay, eta=eta, yield_every=yield_every,
+               device="cpu", init_k=50, beta_decay=beta_decay, divide_single=True, dtype = torch.float64)
     sim.w = w
     sim.find_potential_neighbours()
-    Gtilde, w = sim.get_gradient_vectors(better=better_wnt_gradient)
-    if normalize:
-        gnorm = Gtilde.norm(dim=1)
-        Gtilde /= gnorm[:,None]
-    if threshold:
-        Gtilde[w < wnt_threshold] = 0
+    Gtilde, w = sim.get_gradient_vectors_unnormalized(project = project)
     df['G1'], df['G2'], df['G3'] = Gtilde.T
     return df, kwargs
 
 
-def plot(df, normalize=False):
+def plot(df):
     fig = go.Figure(data=[go.Cone(
         x=df['x1'],
         y=df['x2'],
@@ -57,7 +52,7 @@ def plot(df, normalize=False):
     return fig
 
 
-def save(fig, fname, wnt_gradient_version=''):
+def save(fig, fname, wnt_gradient_version = ''):
     fig.write_html(fname.replace('data', 'animations').replace('.pkl', f'_{wnt_gradient_version}_WNT_gradient.html'),
                    include_plotlyjs='directory', full_html=False, animation_opts={'frame': {'duration': 100}})
 
@@ -65,14 +60,11 @@ def save(fig, fname, wnt_gradient_version=''):
 if __name__ == "__main__":
     fname = input('Enter data filename: ')  # 'data/test1.pkl'
     T_plot = int(input('timestep to plot: ') or -1)
-    wnt_gradient_version = input('old or new? (default: old) ') or 'old'
-    normalize = bool(input('normalize? '))
-    threshold = bool(input('threshold? '))
-    better_wnt_gradient = (wnt_gradient_version == 'new')
+    wnt_gradient_version = input('project perp to AB? (default: False) ') or False
+    better_wnt_gradient = (wnt_gradient_version=='new')
     data, kwargs, fname = load(fname)
     df, kwargs = build_df_wnt(data, kwargs)
     df_t = select(df, T_plot, kwargs)
-    df, kwargs = compute_WNT_gradient(
-        df_t, kwargs, better_wnt_gradient=better_wnt_gradient, normalize=normalize, threshold=threshold)
-    fig = plot(df, normalize=normalize)
+    df, kwargs = compute_WNT_gradient(df_t, kwargs, project = wnt_gradient_version)
+    fig = plot(df)
     save(fig, fname, wnt_gradient_version=wnt_gradient_version)
