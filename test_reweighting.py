@@ -18,7 +18,7 @@ with open(f'data/ic/relaxed-sphere-n-{n}.pkl', 'rb') as fobj:
     x, p, q = pickle.load(fobj)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
-lam_0 = np.array([0.0, .375, .275, .05, 0.3])
+lam_0 = np.array([0.0, .375, .275, .05, 0.075])
 lam = lam_0
 eta = 1e-2  # noise
 
@@ -35,10 +35,10 @@ wnt_cells = index
 wnt_threshold = 1e-1
 diffuse_every = 1
 diffuse_multiple = 2
-wnt_decay = -1e-3
+wnt_decay = -5e-4
 
 # Simulation parameters
-timesteps = 100
+timesteps = 50
 yield_every = 1500   # save simulation state every x time steps
 dt = 0.1
 
@@ -57,7 +57,7 @@ def division_decider(sim, tstep):
     if T < 1000 or len(sim.x) > max_cells - 1:
         return False
 
-    def f(T): return 0.5*T
+    def f(T): return 0.25*T
     if int(f(T)) > int(f(T-sim.dt)):
         return True
     else:
@@ -74,6 +74,7 @@ for i in range(n_diffuse):
     sim.get_gradient_averaging()
 
 runner = sim.simulation(potential=potential,
+                        better_WNT_gradient=True,
                         division_decider=division_decider)
 
 # Running the simulation

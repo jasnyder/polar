@@ -29,12 +29,12 @@ with open(f'data/ic/relaxed-sphere-n-{n}.pkl', 'rb') as fobj:
     x, p, q = pickle.load(fobj)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
-lam_0 = np.array([0.0, .5, .4, .1, 100])
+lam_0 = np.array([0.0, .5, .4, .1, 0.1])
 lam = lam_0
 eta = 1e-2  # noise
 
 # Pick some number of cells to be WNT cells and make them divide
-n_wnt = 3
+n_wnt = 5
 index = np.random.randint(len(x), size = n_wnt)
 lam = np.repeat(lam[None, :], len(x), axis=0)
 lam[index, 4] = 0
@@ -47,10 +47,10 @@ wnt_cells = index
 wnt_threshold = 1e-1
 diffuse_every = 1
 diffuse_multiple = 2
-wnt_decay = -1e-4
+wnt_decay = -5e-4
 
 # Simulation parameters
-timesteps = 100
+timesteps = 50
 yield_every = 1000   # save simulation state every x time steps
 dt = 0.1
 
