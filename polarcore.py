@@ -178,6 +178,7 @@ class Polar:
         idx = torch.gather(self.idx, 1, sort_idx)
 
         m = torch.max(torch.sum(z_mask, dim=1)) + 1
+        m = min(m, z_mask.shape[1])
 
         self.z_mask = z_mask[:, :m]
         self.dx = dx[:, :m]

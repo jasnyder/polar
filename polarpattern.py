@@ -9,8 +9,19 @@ import numpy as np
 import torch
 from scipy.spatial.ckdtree import cKDTree
 
+
 class PolarPattern(polarcore.PolarWNT):
-    def __init__(self, *args, N_ligand = 50000, ligand_step = 1, bounding_radius_factor = 2, contact_radius = 1, R_init = 1.0, R_upregulate = 1e-2, w_upregulate = 1e-2, **kwargs):
+    def __init__(self, *args,
+                 N_ligand=50000,
+                 ligand_step=1,
+                 bounding_radius_factor=2,
+                 contact_radius=1,
+                 R_init=1.0,
+                 R_upregulate=1e-2, w_upregulate=1e-2,
+                 R_decay=-1e-3,
+                 absorption_probability_slope=1,
+                 selfnormalizing_absorption_probability=False,
+                 **kwargs):
         self.N_ligand = N_ligand
         self.ligand_step = ligand_step
         self.bounding_radius_factor = bounding_radius_factor
@@ -20,29 +31,34 @@ class PolarPattern(polarcore.PolarWNT):
         self.R_init = R_init
         self.R_upregulate = R_upregulate
         self.w_upregulate = w_upregulate
+        self.R_decay = R_decay
+        self.absorption_probability_slope = absorption_probability_slope
+        self.selfnormalizing_absorption_probability = selfnormalizing_absorption_probability
         self.get_bounding_sphere()
         self.initialize_ligand()
 
     def get_bounding_sphere(self):
         self.bounding_sphere_center = self.x.mean(dim=0)
-        self.bounding_sphere_radius = self.bounding_radius_factor * torch.max(torch.norm(self.x - self.bounding_sphere_center, dim=1))
+        self.bounding_sphere_radius = self.bounding_radius_factor * \
+            torch.max(torch.norm(self.x - self.bounding_sphere_center, dim=1))
         return self.bounding_sphere_center, self.bounding_sphere_radius
 
     def initialize_ligand(self):
         # place ligand particles uniformly at random on the surface of the bouding sphere
         self.get_bounding_sphere()
-        pos = torch.randn((self.N_ligand, 3), device = self.device, dtype = self.dtype)
-        pos /= torch.norm(pos, dim = 1, keepdim=True)
+        pos = torch.randn((self.N_ligand, 3),
+                          device=self.device, dtype=self.dtype)
+        pos /= torch.norm(pos, dim=1, keepdim=True)
         ligand = self.bounding_sphere_center + self.bounding_sphere_radius * pos
         self.ligand = ligand.detach()
 
     def replenish_ligand_particles(self):
         self.get_bounding_sphere()
         n_new = self.N_ligand - len(self.ligand)
-        pos = torch.randn((n_new, 3), device = self.device, dtype = self.dtype)
-        pos/= torch.norm(pos, dim=1, keepdim=True)
-        self.ligand = torch.cat((self.ligand, self.bounding_sphere_center + self.bounding_sphere_radius * pos), dim = 0)
-
+        pos = torch.randn((n_new, 3), device=self.device, dtype=self.dtype)
+        pos /= torch.norm(pos, dim=1, keepdim=True)
+        self.ligand = torch.cat(
+            (self.ligand, self.bounding_sphere_center + self.bounding_sphere_radius * pos), dim=0)
 
     def random_walk_ligand(self):
         """
@@ -55,12 +71,14 @@ class PolarPattern(polarcore.PolarWNT):
         """
         with torch.no_grad():
             # step in a random direction
-            dx = torch.empty_like(self.ligand).normal_() * self.sqrt_dt * self.ligand_step
+            dx = torch.empty_like(self.ligand).normal_() * \
+                self.sqrt_dt * self.ligand_step
             # hvae a routine that bounces ligand particles off of the surface of the bounding sphere
             dx = self.check_bounding_sphere(dx)
             # have another routine that checks which ligand particles are about to hit a cell, then either absorbs them or reflects them off of the cell
             # this routine may change the number of entries of the ligand and dx tensors!!
-            dx = self.handle_ligand_collisions(dx, contact_radius = self.contact_radius)
+            dx = self.handle_ligand_collisions(
+                dx, contact_radius=self.contact_radius)
             # update ligand particle positions
             self.ligand = self.ligand + dx
             # refresh the pool of ligand particles with enough to keep the total number fixed
@@ -68,42 +86,60 @@ class PolarPattern(polarcore.PolarWNT):
 
     def check_bounding_sphere(self, dx):
         # compute by how much each cell would exceed the bounding sphere
-        factor = torch.clamp(torch.norm((self.ligand + dx - self.bounding_sphere_center), dim = 1) - self.bounding_sphere_radius, min=0)
+        factor = torch.clamp(torch.norm(
+            (self.ligand + dx - self.bounding_sphere_center), dim=1) - self.bounding_sphere_radius, min=0)
         # adjust each row of dx by that factor times the vector pointing towards the center of the sphere
         # factor 2 so that the particle moves _inside_ the sphere rather than to its surface
-        dx -= 2* factor[:,None] * (self.ligand - self.bounding_sphere_center)
+        dx -= 2 * factor[:, None] * (self.ligand - self.bounding_sphere_center)
         return dx
 
-
-    def absorption_probability(self, R, mean = None, slope = 1):
+    def absorption_probability(self, R, mean=None, slope=None):
         if mean is None:
-            mean = self.R_init
+            mean = self.R.mean()
+        if slope is None:
+            slope = self.absorption_probability_slope
         return 1+torch.tanh(slope*(R - mean))/2
 
-    def handle_ligand_collisions(self, dx, contact_radius = 1, workers = -1):
+    def absorption_probability_selfnormalizing(self, R, Rmax, Rmin):
+        center = (Rmin+Rmax)/2
+        denom = max(Rmax-Rmin, 1e-2)
+        return (1+torch.tanh(4*(R-center)/(denom)))/2
+
+    def handle_ligand_collisions(self, dx, contact_radius=1, workers=-1):
         try:
-            ligand_tree = cKDTree((self.ligand + dx).detach().to('cpu').numpy())
-            inds = ligand_tree.query_ball_point(self.x.detach().to('cpu').numpy(), contact_radius, n_jobs = workers)
+            ligand_tree = cKDTree(
+                (self.ligand + dx).detach().to('cpu').numpy())
+            inds = ligand_tree.query_ball_point(self.x.detach().to(
+                'cpu').numpy(), contact_radius, n_jobs=workers)
         except ValueError:
             import pickle
-            with open('data/dump/ligand_tree_fail.pkl','w') as fobj:
-                pickle.dump({'ligand':self.ligand.detach().to('cpu')}, fobj)
-        
+            with open('data/dump/ligand_tree_fail.pkl', 'w') as fobj:
+                pickle.dump({'ligand': self.ligand.detach().to('cpu')}, fobj)
+
         # len(inds) = len(x) = number of cells
         # inds[i] = list of indices of ligand particles within distance contact_radius of cell i
         absorb = [list(), list()]
         reflect = [list(), list()]
         Rmean = self.R.mean()
+        Rmin = self.R.min()
+        Rmax = self.R.max()
+        if self.selfnormalizing_absorption_probability:
+            abs_probs = self.absorption_probability_selfnormalizing(
+                self.R, Rmax, Rmin)
+        else:
+            abs_probs = self.absorption_probability(self.R, mean=Rmean)
+        rolls = torch.rand((len(self.R), max([len(ind) for ind in inds])), device=self.device)
         for i, ind in enumerate(inds):
+            # first check if the query_ball_point choked by returning None
             if ind is None:
                 import pickle
-                with open('data/dump/ligand_tree_fail.pkl','wb') as fobj:
-                    pickle.dump({'ligand':self.ligand.detach().to('cpu')}, fobj)
-            # for each cell i
-            for j in ind:
+                with open('data/dump/ligand_tree_fail.pkl', 'wb') as fobj:
+                    pickle.dump(
+                        {'ligand': self.ligand.detach().to('cpu')}, fobj)
+            for k, j in enumerate(ind):
                 # for each ligand particle near enough to cell i
                 # roll a die with success probability depending on R
-                if np.random.rand() < self.absorption_probability(self.R[i], mean=Rmean):
+                if rolls[i,k] < abs_probs[i]:
                     absorb[0].append(i)
                     absorb[1].append(j)
                 else:
@@ -115,7 +151,7 @@ class PolarPattern(polarcore.PolarWNT):
         self.absorb(absorb)
         # for those ligand particles that were absorbed, remove them.
         # removal is accomplished by a boolean mask
-        mask = torch.ones(len(dx), dtype = torch.bool, device = self.device)
+        mask = torch.ones(len(dx), dtype=torch.bool, device=self.device)
         mask[absorb[1]] = False
         dx = dx[mask, :]
         self.ligand = self.ligand[mask, :]
@@ -127,11 +163,18 @@ class PolarPattern(polarcore.PolarWNT):
 
     def reflect(self, dx, indices):
         # find those ligand particles that would have touched cells, and reflect their dx vector through the plane perpendicular to AB polarity
-        # dx[indices[1]] += 2 * torch.abs(torch.sum(dx[indices[1]] * self.p[indices[0]], dim=1, keepdim=True)) * self.p[indices[0]]
+        dx[indices[1]] += self.p[indices[0]]# * torch.abs(torch.sum(dx[indices[1]] * self.p[indices[0]], dim=1, keepdim=True))
         return dx
 
-
-    def simulation(self, potential, division_decider = lambda *args : True, better_WNT_gradient = False, yield_ligand = False):
+    def simulation(self, potential,
+                   division_decider=lambda *args: True,
+                   better_WNT_gradient=False,
+                   yield_ligand=False,
+                   random_walk_multiple=1,
+                   wnt_func_of_R=False,
+                   beta_func_of_w=False,
+                   diffuse_every=np.inf,
+                   diffuse_multiple=1):
         """
         Generator to implement the simulation
 
@@ -193,24 +236,43 @@ class PolarPattern(polarcore.PolarWNT):
 
             # perform cell division, depending on the output of the function division_decider
             # by default, always do cell division (this results in exponential growth of number of cells)
-            self.random_walk_ligand()
+            for _ in range(random_walk_multiple):
+                self.random_walk_ligand()
 
+            # decide if cells divide this time
             division = False
             if division_decider(self, tstep):
                 if self.divide_single:
                     division = self.cell_division_single()
                 else:
                     division = self.cell_division()
-            
+
             n_update = self.update_k(self.true_neighbour_max, tstep)
             self.k = min(self.k, len(self.x) - 1)
 
+            # recompute potential neighbors if necessary
             if division or tstep % n_update == 0 or self.idx is None:
                 self.find_potential_neighbours()
-            
+
+            # do cell-to-cell diffusion of R and WNT
+            if tstep > 0 and tstep % diffuse_every == 0:
+                for _ in range(diffuse_multiple):
+                    self.get_gradient_averaging()
+                    self.diffuse_R()
+
             self.get_gradient_vectors(better=better_WNT_gradient)
             self.gradient_step(tstep, potential=potential)
-            self.w = self.w * np.exp(self.dt * self.wnt_decay)
+            if wnt_func_of_R:
+                Rmax = self.R.max()
+                Rmin = self.R.min()
+                center = (Rmin + Rmax)/2
+                denom = max(Rmax-Rmin, 1e-2)
+                self.w = (1+torch.tanh(4*(self.R-center)/(denom)))/2
+            else:
+                self.w = self.w * np.exp(self.dt * self.wnt_decay)
+            if beta_func_of_w:
+                self.beta = self.w.detach().clone() ** 6
+            self.R = self.R * np.exp(self.dt * self.R_decay)
 
             torch.cuda.empty_cache()
 
@@ -268,7 +330,7 @@ class PolarPattern(polarcore.PolarWNT):
         """
         if torch.sum(self.beta) < self.do_nothing_threshold:
             return False
-        
+
         # set probability according to beta and dt
         d_prob = self.beta * self.dt
         # flip coins
@@ -372,3 +434,14 @@ class PolarPattern(polarcore.PolarWNT):
         self.q.requires_grad = True
 
         return True
+
+    def diffuse_R(self):
+        self.find_true_neighbours()
+        R_copy = self.R.clone()
+
+        with torch.no_grad():
+            weights_true_neighb = self.R[self.idx] * self.z_mask.float()
+            R_copy = (torch.sum(weights_true_neighb, dim=1) + R_copy) / (torch.sum(self.z_mask, dim=1) + 1).float()
+        
+        self.R = R_copy
+        return

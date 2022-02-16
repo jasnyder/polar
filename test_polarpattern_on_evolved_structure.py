@@ -15,38 +15,38 @@ import pickle
 import torch
 
 
-save_name = 'test-polarpattern'
+save_name = 'test-polarpattern-on-evolved'
 max_cells = 10000
 
-# Grab sphere initial condition from log
-n = 500
-with open(f'data/ic/relaxed-sphere-n-{n}.pkl', 'rb') as fobj:
-    x, p, q = pickle.load(fobj)
+# grab a configuration (x, p, q) from a previous run
+fname = 'data/sphere-wnt-n-1000-n_wnt-5-04Jan2022-14-43-36.pkl'
+with open(fname,'rb') as fobj:
+    data, kwargs = pickle.load(fobj)
+x, p, q, ww, ll = data[-1]
+n=len(x)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
-lam_0 = np.array([0.0, .55, .35, .1, 0.5])
-lam = lam_0
-eta = 1e-2  # noise
+eta = kwargs['eta']  # noise
 
 # Pick some number of cells to be WNT cells and make them divide
 n_wnt = 0
 index = np.random.randint(len(x), size=n_wnt)
-lam = np.repeat(lam[None, :], len(x), axis=0)
+lam = ll
 
 # update beta (division rate) parameters and beta_decay: factor by which daughter cells have beta reduced
 beta[index] = 1
 beta_decay = 0
 
 wnt_cells = index
-wnt_threshold = 1e-1
-diffuse_every = 100
+wnt_threshold = kwargs['wnt_threshold']
+diffuse_every = 4
 diffuse_multiple = 1
-wnt_decay = 0
-R_decay = -2e-3
+wnt_decay = -5e-5
+R_decay = -5e-5
 
 # Simulation parameters
-timesteps = 25
-yield_every = 1500   # save simulation state every x time steps
+timesteps = 50
+yield_every = 500   # save simulation state every x time steps
 dt = 0.1
 
 # Potential
@@ -54,30 +54,11 @@ potential = potentials_wnt.potential_nematic_reweight
 
 # parameters relating to the ligand diffusion
 bounding_radius_factor = 1.5
-ligand_step = 0.25
+ligand_step = 0.5
 contact_radius = 1
 N_ligand = 50000
-random_walk_multiple = 5
+random_walk_multiple = 2
 absoprtion_probability_slope = 4
-
-
-def division_decider(sim, tstep):
-    """
-    This is a function that decides whether or not to let the cells divide
-
-    Idea: take a sublinear function of time, and allow cell division whenever the value of that function passes an integer
-    This will make cell division happen more rarely as the simulation progresses.
-    """
-    T = sim.dt * tstep
-    if T < 1000 or len(sim.x) > max_cells - 1:
-        return False
-
-    def f(T): return 0.1*T
-    if int(f(T)) > int(f(T-sim.dt)):
-        return True
-    else:
-        return False
-
 
 # Make the simulation runner object:
 sim = PolarPattern(x, p, q, lam, beta,
@@ -86,17 +67,13 @@ sim = PolarPattern(x, p, q, lam, beta,
                    N_ligand=N_ligand,
                    device="cuda", init_k=50, beta_decay=beta_decay, divide_single=True, absorption_probability_slope=absoprtion_probability_slope,
                    R_decay = R_decay,
-                   bounding_radius_factor=bounding_radius_factor, contact_radius=contact_radius, ligand_step=ligand_step, selfnormalizing_absorption_probability=True)
+                   bounding_radius_factor=bounding_radius_factor, contact_radius=contact_radius, ligand_step=ligand_step)
 
 runner = sim.simulation(potential=potential,
                         better_WNT_gradient=True,
-                        division_decider=division_decider,
+                        division_decider=lambda *args:False,
                         random_walk_multiple=random_walk_multiple,
-                        yield_ligand=True,
-                        wnt_func_of_R=True,
-                        beta_func_of_w=True,
-                        diffuse_every=diffuse_every,
-                        diffuse_multiple=diffuse_multiple)
+                        yield_ligand=True)
 
 # Running the simulation
 data = []  # For storing data
@@ -109,6 +86,10 @@ for line in itertools.islice(runner, timesteps):
     print(
         f'Running {i} of {timesteps}   ({yield_every * i} of {yield_every * timesteps})   ({len(line[0])} cells)')
     data.append(line)
+    sim.beta = sim.w.detach().clone()**4
+    if i > 0 and i % diffuse_every == 0:
+        for j in range(diffuse_multiple):
+            sim.get_gradient_averaging()
 
     if len(line[0]) > max_cells:
         print('Stopping')
@@ -119,6 +100,8 @@ try:
 except:
     pass
 with open(f'data/{save_name}-n-{n}-n_wnt-{n_wnt}-{time.strftime("%d%b%Y-%H-%M-%S")}.pkl', 'wb') as f:
+    sim.__dict__.update({'diffuse_every': diffuse_every,
+                        'diffuse_multiple': diffuse_multiple})
     pickle.dump([data, sim.__dict__], f)
 
 print(f'Simulation done, saved {timesteps} datapoints')
