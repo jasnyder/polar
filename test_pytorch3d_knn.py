@@ -20,11 +20,11 @@ cells /= cells.norm(dim=1, keepdim=True)
 
 # time the pytorch3d method
 s = time.perf_counter()
-dists, idx, nn = pytorch3d.ops.ball_query(ligand, cells, radius = 1, K=N2)
+dists, idx, nn = pytorch3d.ops.ball_query(ligand, cells, radius = 1, K=100)
 print(f'pytorch3d, ligand -> cells done in {time.perf_counter() - s} seconds')
 
 s = time.perf_counter()
-dists, idx, nn = pytorch3d.ops.ball_query(cells, ligand, radius = 1, K=N1)
+dists, idx, nn = pytorch3d.ops.ball_query(cells, ligand, radius = 1, K=100)
 print(f'pytorch3d, cells -> ligand done in {time.perf_counter() - s} seconds')
 
 # time the cKDTree method
