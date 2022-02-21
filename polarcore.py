@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from scipy.spatial.ckdtree import cKDTree
+from pytorch3d.ops import knn_points
 
 
 class Polar:
@@ -128,10 +129,10 @@ class Polar:
         """
         if k is None:
             k = self.k
-        tree = cKDTree(self.x.detach().to("cpu").numpy())
-        d, idx = tree.query(self.x.detach().to("cpu").numpy(), k + 1, distance_upper_bound=distance_upper_bound, n_jobs=workers)
-        self.d = torch.tensor(d[:, 1:], dtype = self.dtype, device=self.device)
-        self.idx = torch.tensor(idx[:, 1:] , dtype = torch.long, device=self.device)
+        with torch.no_grad():
+            dists, idx, _ = knn_points(self.x[None, :, :], self.x[None, :, :], K = k)
+            self.d = torch.sqrt(dists[0, :, 1:])
+            self.idx = idx[0, :, 1:]
 
     def find_true_neighbours(self):
         """

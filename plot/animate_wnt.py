@@ -1,7 +1,7 @@
 import plotly.express as px
 try:
     from .plotcore import load, build_df_wnt
-except ModuleNotFoundError:
+except:
     from plotcore import load, build_df_wnt
 
 

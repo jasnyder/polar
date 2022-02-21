@@ -8,6 +8,8 @@ import polarcore
 import numpy as np
 import torch
 from scipy.spatial.ckdtree import cKDTree
+import pytorch3d
+from pytorch3d.ops import ball_query
 
 
 class PolarPattern(polarcore.PolarWNT):
@@ -82,7 +84,7 @@ class PolarPattern(polarcore.PolarWNT):
             # update ligand particle positions
             self.ligand = self.ligand + dx
             # refresh the pool of ligand particles with enough to keep the total number fixed
-            self.replenish_ligand_particles()
+            # self.replenish_ligand_particles()
 
     def check_bounding_sphere(self, dx):
         # compute by how much each cell would exceed the bounding sphere
@@ -100,26 +102,19 @@ class PolarPattern(polarcore.PolarWNT):
             slope = self.absorption_probability_slope
         return 1+torch.tanh(slope*(R - mean))/2
 
-    def absorption_probability_selfnormalizing(self, R, Rmax, Rmin):
+    def absorption_probability_selfnormalizing(self, R, Rmax, Rmin, slope = None):
+        if slope is None:
+            slope = self.absorption_probability_slope
         center = (Rmin+Rmax)/2
         denom = max(Rmax-Rmin, 1e-2)
-        return (1+torch.tanh(4*(R-center)/(denom)))/2
+        return (1+torch.tanh(2*slope*(R-center)/(denom)))/2
 
-    def handle_ligand_collisions(self, dx, contact_radius=1, workers=-1):
-        try:
-            ligand_tree = cKDTree(
-                (self.ligand + dx).detach().to('cpu').numpy())
-            inds = ligand_tree.query_ball_point(self.x.detach().to(
-                'cpu').numpy(), contact_radius, n_jobs=workers)
-        except ValueError:
-            import pickle
-            with open('data/dump/ligand_tree_fail.pkl', 'w') as fobj:
-                pickle.dump({'ligand': self.ligand.detach().to('cpu')}, fobj)
+    def handle_ligand_collisions(self, dx, contact_radius=1):
+        # find the ligand particles that are within a given distance of any cell
+        _, idx, _ = ball_query(self.x[None,:,:], (self.ligand+dx)[None,:,:], K=100, radius=contact_radius, return_nn=False)
+        idx = idx[0]
 
-        # len(inds) = len(x) = number of cells
-        # inds[i] = list of indices of ligand particles within distance contact_radius of cell i
-        absorb = [list(), list()]
-        reflect = [list(), list()]
+        # compute the probability for each cell to absorb a particle
         Rmean = self.R.mean()
         Rmin = self.R.min()
         Rmax = self.R.max()
@@ -128,38 +123,34 @@ class PolarPattern(polarcore.PolarWNT):
                 self.R, Rmax, Rmin)
         else:
             abs_probs = self.absorption_probability(self.R, mean=Rmean)
-        rolls = torch.rand((len(self.R), max([len(ind) for ind in inds])), device=self.device)
-        for i, ind in enumerate(inds):
-            # first check if the query_ball_point choked by returning None
-            if ind is None:
-                import pickle
-                with open('data/dump/ligand_tree_fail.pkl', 'wb') as fobj:
-                    pickle.dump(
-                        {'ligand': self.ligand.detach().to('cpu')}, fobj)
-            for k, j in enumerate(ind):
-                # for each ligand particle near enough to cell i
-                # roll a die with success probability depending on R
-                if rolls[i,k] < abs_probs[i]:
-                    absorb[0].append(i)
-                    absorb[1].append(j)
-                else:
-                    reflect[0].append(i)
-                    reflect[1].append(j)
-        # carry out reflection off of cells
-        dx = self.reflect(dx, reflect)
-        # carry out absorption of ligand by cells
-        self.absorb(absorb)
+
+        # generate random numbers to decide whether each particle gets absorbed by a cell
+        rolls = torch.rand(idx.shape, device=self.device)
+
+        # compare rolls to absorption probabilities
+        # note, only return indices where idx[***] is nonnegative, since ball_query pads with -1
+        absorption_bools = torch.logical_and(rolls<abs_probs[:, None], idx>=0)
+        
+        # carry out reflection off of cells for particles that were NOT absorbed
+        cell_indices, particle_indices_in_idx = torch.where(~absorption_bools)
+        dx = self.reflect(dx, (cell_indices, idx[cell_indices, particle_indices_in_idx]))
+        
+        # carry out absorption of ligand by cells for particles that WERE absorbed
+        # note we only care about how many particles were absorbed by each cell, hence the sum
+        self.absorb(absorption_bools.sum(dim=1))
+        
         # for those ligand particles that were absorbed, remove them.
-        # removal is accomplished by a boolean mask
-        mask = torch.ones(len(dx), dtype=torch.bool, device=self.device)
-        mask[absorb[1]] = False
-        dx = dx[mask, :]
-        self.ligand = self.ligand[mask, :]
+        # removal is accomplished by setting the appropriate entries to new random values at the bounding sphere
+        # zero out the dx for those newly created particles
+        to_remove = idx[absorption_bools]
+        dx[to_remove, :] = 0
+        new_pos = torch.rand((len(to_remove), 3), device = self.device, dtype=self.dtype)
+        new_pos /= torch.norm(new_pos, dim=1, keepdim=True)
+        self.ligand[to_remove] = new_pos * self.bounding_sphere_radius + self.bounding_sphere_center
         return dx
 
-    def absorb(self, indices):
-        self.R[indices[0]] += self.R_upregulate
-        self.w[indices[0]] += self.w_upregulate
+    def absorb(self, particle_counts):
+        self.R += self.R_upregulate * particle_counts
 
     def reflect(self, dx, indices):
         # find those ligand particles that would have touched cells, and reflect their dx vector through the plane perpendicular to AB polarity
@@ -271,10 +262,10 @@ class PolarPattern(polarcore.PolarWNT):
             else:
                 self.w = self.w * np.exp(self.dt * self.wnt_decay)
             if beta_func_of_w:
-                self.beta = self.w.detach().clone() ** 6
+                self.beta = self.w.detach().clone() ** 1
             self.R = self.R * np.exp(self.dt * self.R_decay)
 
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
 
             if tstep % self.yield_every == 0:
                 xx = self.x.detach().to("cpu").numpy().copy()

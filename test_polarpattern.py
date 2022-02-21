@@ -3,6 +3,10 @@ This file is meant to run simulations of the patterning mechanism encoded in pol
 
 to do this, I need to set all parameters needed to spin up an instance of PolarWNT, as well as parameters specific to the ligand diffusion dynamics.
 """
+import faulthandler
+
+faulthandler.enable()
+
 import numpy as np
 import time
 import itertools
@@ -42,11 +46,11 @@ wnt_threshold = 1e-1
 diffuse_every = 100
 diffuse_multiple = 1
 wnt_decay = 0
-R_decay = -2e-3
+R_decay = -1e-2
 
 # Simulation parameters
-timesteps = 25
-yield_every = 1500   # save simulation state every x time steps
+timesteps = 50
+yield_every = 2000   # save simulation state every x time steps
 dt = 0.1
 
 # Potential
@@ -58,7 +62,7 @@ ligand_step = 0.25
 contact_radius = 1
 N_ligand = 50000
 random_walk_multiple = 5
-absoprtion_probability_slope = 4
+absoprtion_probability_slope = 1
 
 
 def division_decider(sim, tstep):
@@ -113,6 +117,10 @@ for line in itertools.islice(runner, timesteps):
     if len(line[0]) > max_cells:
         print('Stopping')
         break
+
+    with open(f'data/{save_name}-n-{n}-n_wnt-{n_wnt}-in-progress.pkl', 'wb') as f:
+        pickle.dump([data, sim.__dict__], f)
+
 
 try:
     os.mkdir('data')
