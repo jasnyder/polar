@@ -23,6 +23,7 @@ class PolarPattern(polarcore.PolarWNT):
                  R_decay=-1e-3,
                  absorption_probability_slope=1,
                  selfnormalizing_absorption_probability=False,
+                 simulate_ligand_dilution=False,
                  **kwargs):
         self.N_ligand = N_ligand
         self.ligand_step = ligand_step
@@ -36,6 +37,7 @@ class PolarPattern(polarcore.PolarWNT):
         self.R_decay = R_decay
         self.absorption_probability_slope = absorption_probability_slope
         self.selfnormalizing_absorption_probability = selfnormalizing_absorption_probability
+        self.simulate_ligand_dilution = simulate_ligand_dilution
         self.get_bounding_sphere()
         self.initialize_ligand()
 
@@ -150,7 +152,11 @@ class PolarPattern(polarcore.PolarWNT):
         return dx
 
     def absorb(self, particle_counts):
-        self.R += self.R_upregulate * particle_counts
+        if self.simulate_ligand_dilution:
+            factor = self.bounding_sphere_radius ** 3
+        else:
+            factor = 1
+        self.R += self.R_upregulate * particle_counts * factor
 
     def reflect(self, dx, indices):
         # find those ligand particles that would have touched cells, and reflect their dx vector through the plane perpendicular to AB polarity
@@ -258,7 +264,8 @@ class PolarPattern(polarcore.PolarWNT):
                 Rmin = self.R.min()
                 center = (Rmin + Rmax)/2
                 denom = max(Rmax-Rmin, 1e-2)
-                self.w = (1+torch.tanh(4*(self.R-center)/(denom)))/2
+                slope = self.absorption_probability_slope or 2
+                self.w = (1+torch.tanh(2*slope*(self.R-center)/(denom)))/2
             else:
                 self.w = self.w * np.exp(self.dt * self.wnt_decay)
             if beta_func_of_w:

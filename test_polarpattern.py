@@ -28,7 +28,7 @@ with open(f'data/ic/relaxed-sphere-n-{n}.pkl', 'rb') as fobj:
     x, p, q = pickle.load(fobj)
 
 beta = 0 + np.zeros(len(x))  # cell division rate
-lam_0 = np.array([0.0, .55, .35, .1, 0.5])
+lam_0 = np.array([0.0, .55, .35, .1, 0.1])
 lam = lam_0
 eta = 1e-2  # noise
 
@@ -43,14 +43,14 @@ beta_decay = 0
 
 wnt_cells = index
 wnt_threshold = 1e-1
-diffuse_every = 100
+diffuse_every = 1
 diffuse_multiple = 1
 wnt_decay = 0
 R_decay = -1e-2
 
 # Simulation parameters
 timesteps = 50
-yield_every = 2000   # save simulation state every x time steps
+yield_every = 1000   # save simulation state every x time steps
 dt = 0.1
 
 # Potential
@@ -90,6 +90,7 @@ sim = PolarPattern(x, p, q, lam, beta,
                    N_ligand=N_ligand,
                    device="cuda", init_k=50, beta_decay=beta_decay, divide_single=True, absorption_probability_slope=absoprtion_probability_slope,
                    R_decay = R_decay,
+                   simulate_ligand_dilution=True,
                    bounding_radius_factor=bounding_radius_factor, contact_radius=contact_radius, ligand_step=ligand_step, selfnormalizing_absorption_probability=True)
 
 runner = sim.simulation(potential=potential,
