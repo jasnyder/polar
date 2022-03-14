@@ -3,6 +3,8 @@ This file defines a class that will simulate the polarity model coupled together
 
 
 """
+import pickle as pkl
+from copyreg import pickle
 from zmq import device
 import polarcore
 import numpy as np
@@ -30,7 +32,8 @@ class PolarPattern(polarcore.PolarWNT):
         self.bounding_radius_factor = bounding_radius_factor
         self.contact_radius = contact_radius
         super().__init__(*args, **kwargs)
-        self.R = torch.ones_like(self.w) * R_init
+        self.R = (2*torch.rand(*self.w.shape, requires_grad=False, device = self.device)) * R_init
+        self.R.requires_grad = False
         self.R_init = R_init
         self.R_upregulate = R_upregulate
         self.w_upregulate = w_upregulate
@@ -42,9 +45,9 @@ class PolarPattern(polarcore.PolarWNT):
         self.initialize_ligand()
 
     def get_bounding_sphere(self):
-        self.bounding_sphere_center = self.x.mean(dim=0)
-        self.bounding_sphere_radius = self.bounding_radius_factor * \
-            torch.max(torch.norm(self.x - self.bounding_sphere_center, dim=1))
+        self.bounding_sphere_center = self.x.mean(dim=0).detach()
+        self.bounding_sphere_radius = (self.bounding_radius_factor * \
+            torch.max(torch.norm(self.x - self.bounding_sphere_center, dim=1))).detach()
         return self.bounding_sphere_center, self.bounding_sphere_radius
 
     def initialize_ligand(self):
@@ -55,6 +58,7 @@ class PolarPattern(polarcore.PolarWNT):
         pos /= torch.norm(pos, dim=1, keepdim=True)
         ligand = self.bounding_sphere_center + self.bounding_sphere_radius * pos
         self.ligand = ligand.detach()
+        self.dilution_factor_basis = self.bounding_sphere_radius**3
 
     def replenish_ligand_particles(self):
         self.get_bounding_sphere()
@@ -98,11 +102,7 @@ class PolarPattern(polarcore.PolarWNT):
         return dx
 
     def absorption_probability(self, R, mean=None, slope=None):
-        if mean is None:
-            mean = self.R.mean()
-        if slope is None:
-            slope = self.absorption_probability_slope
-        return 1+torch.tanh(slope*(R - mean))/2
+        return torch.clamp(self.R, min = 0, max = 1)
 
     def absorption_probability_selfnormalizing(self, R, Rmax, Rmin, slope = None):
         if slope is None:
@@ -151,12 +151,15 @@ class PolarPattern(polarcore.PolarWNT):
         self.ligand[to_remove] = new_pos * self.bounding_sphere_radius + self.bounding_sphere_center
         return dx
 
-    def absorb(self, particle_counts):
+    def absorb(self, particle_counts, hill_coefficient = 3, hill_k = 5):
         if self.simulate_ligand_dilution:
-            factor = self.bounding_sphere_radius ** 3
+            factor = self.bounding_sphere_radius ** 3 / self.dilution_factor_basis
         else:
             factor = 1
-        self.R += self.R_upregulate * particle_counts * factor
+        RL = self.R * particle_counts
+        # dR = self.R_upregulate * (RL**hill_coefficient)/(RL**hill_coefficient + hill_k**hill_coefficient)
+        dR = (hill_k**hill_coefficient *hill_coefficient* RL**(-1 + hill_coefficient))/(hill_k**hill_coefficient + RL**hill_coefficient)**2
+        self.R += dR * factor - self.R * self.R_decay
 
     def reflect(self, dx, indices):
         # find those ligand particles that would have touched cells, and reflect their dx vector through the plane perpendicular to AB polarity
@@ -274,7 +277,22 @@ class PolarPattern(polarcore.PolarWNT):
 
             # torch.cuda.empty_cache()
 
+            if self.w.isnan().any() or self.x.isnan().any():
+                print('nan detected, dumping to /data/nandump.pkl')
+                xx = self.x.detach().to("cpu").numpy().copy()
+                pp = self.p.detach().to("cpu").numpy().copy()
+                qq = self.q.detach().to("cpu").numpy().copy()
+                ww = self.w.detach().to("cpu").numpy().copy()
+                ll = self.lam.detach().to("cpu").numpy().copy()
+                if yield_ligand:
+                    lig = self.ligand.detach().to('cpu').numpy().copy()
+                with open('data/nandump.pkl', 'wb') as fobj:
+                    pkl.dump([xx,pp,qq,ww,ll,lig], fobj)
+                break
+
+
             if tstep % self.yield_every == 0:
+                print(self.R.min(), self.R.max(), (self.R.max() - self.R.min()))
                 xx = self.x.detach().to("cpu").numpy().copy()
                 pp = self.p.detach().to("cpu").numpy().copy()
                 qq = self.q.detach().to("cpu").numpy().copy()

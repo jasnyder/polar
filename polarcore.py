@@ -608,16 +608,16 @@ class PolarWNT(Polar):
         dx = self.dx.clone()
         d = self.d.clone()
         with torch.no_grad():
-            weighted_cells = torch.where(self.w >= self.wnt_threshold)[0]
-            w_mask = torch.zeros_like(self.w, dtype=torch.bool)
-            w_mask[weighted_cells] = True
+            w_mask = self.w >= self.wnt_threshold
             # Calculate weights tensors
             w_ii = self.w[:, None].expand(self.w.shape[0], self.idx.shape[1])
             w_ij = self.w[self.idx]
             Gij = (-w_ii[:, :, None] + w_ij[:, :, None]) * dx / d[:,:,None]**2
             G = torch.mean(self.z_mask[:, :, None].float() * Gij, dim=1)
             d_G = torch.sqrt(torch.sum(G**2, dim =1))
-            G[weighted_cells] /= d_G[weighted_cells, None]
+            cells_to_normalize = torch.logical_and(w_mask, d_G > 1e-3)
+            G[cells_to_normalize] /= d_G[cells_to_normalize, None]
+            G[d_G <= 1e-3] = torch.zeros(3, dtype=G.dtype, device=G.device)
             #G[~weighted_cells]= 0
         self.G = G
         return G, self.w
@@ -648,6 +648,9 @@ class PolarWNT(Polar):
             G_tilde = -torch.cross(torch.cross(G, self.p), self.p)  # Note the minus!
             # G_tilde = G
             d_G_tilde = torch.sqrt(torch.sum(G_tilde ** 2, dim=1))
+            # find cells whose d_G_tilde is below some threshold, and set those cells' G to zero
+            # if you don't do this you'll get NANs
+            G_tilde[d_G_tilde < 1e-3] = 0
             G_tilde[weighted_cells] /= d_G_tilde[weighted_cells, None]
         self.G = G_tilde
         return G_tilde, self.w

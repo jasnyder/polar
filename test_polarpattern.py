@@ -46,10 +46,11 @@ wnt_threshold = 1e-1
 diffuse_every = 1
 diffuse_multiple = 1
 wnt_decay = 0
-R_decay = -1e-2
+R_init = 0.5
+R_decay = 2e-4
 
 # Simulation parameters
-timesteps = 50
+timesteps = 20
 yield_every = 1000   # save simulation state every x time steps
 dt = 0.1
 
@@ -58,10 +59,10 @@ potential = potentials_wnt.potential_nematic_reweight
 
 # parameters relating to the ligand diffusion
 bounding_radius_factor = 1.5
-ligand_step = 0.25
+ligand_step = 0.025
 contact_radius = 1
 N_ligand = 50000
-random_walk_multiple = 5
+random_walk_multiple = 1
 absoprtion_probability_slope = 1
 
 
@@ -73,7 +74,7 @@ def division_decider(sim, tstep):
     This will make cell division happen more rarely as the simulation progresses.
     """
     T = sim.dt * tstep
-    if T < 1000 or len(sim.x) > max_cells - 1:
+    if T < 500 or len(sim.x) > max_cells - 1:
         return False
 
     def f(T): return 0.1*T
@@ -89,9 +90,10 @@ sim = PolarPattern(x, p, q, lam, beta,
                    eta=eta, yield_every=yield_every,
                    N_ligand=N_ligand,
                    device="cuda", init_k=50, beta_decay=beta_decay, divide_single=True, absorption_probability_slope=absoprtion_probability_slope,
-                   R_decay = R_decay,
+                   R_decay = R_decay, R_init=R_init,
+                   R_upregulate = 0.1,
                    simulate_ligand_dilution=True,
-                   bounding_radius_factor=bounding_radius_factor, contact_radius=contact_radius, ligand_step=ligand_step, selfnormalizing_absorption_probability=True)
+                   bounding_radius_factor=bounding_radius_factor, contact_radius=contact_radius, ligand_step=ligand_step, selfnormalizing_absorption_probability=False)
 
 runner = sim.simulation(potential=potential,
                         better_WNT_gradient=True,
