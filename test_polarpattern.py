@@ -42,15 +42,18 @@ beta[index] = 1
 beta_decay = 0
 
 wnt_cells = index
-wnt_threshold = 1e-1
+wnt_threshold = 2.5e-1
 diffuse_every = 1
 diffuse_multiple = 1
 wnt_decay = 0
-R_init = 0.5
-R_decay = 2e-4
+R_init = 0.25
+R_upregulate = 10
+R_decay = 1e-2
+hill_coefficient = 8
+hill_k = 0.5
 
 # Simulation parameters
-timesteps = 20
+timesteps = 50
 yield_every = 1000   # save simulation state every x time steps
 dt = 0.1
 
@@ -58,12 +61,13 @@ dt = 0.1
 potential = potentials_wnt.potential_nematic_reweight
 
 # parameters relating to the ligand diffusion
-bounding_radius_factor = 1.5
+bounding_radius_factor = 1.25
 ligand_step = 0.025
 contact_radius = 1
 N_ligand = 50000
 random_walk_multiple = 1
 absoprtion_probability_slope = 1
+abs_probability_offset = 0
 
 
 def division_decider(sim, tstep):
@@ -91,8 +95,11 @@ sim = PolarPattern(x, p, q, lam, beta,
                    N_ligand=N_ligand,
                    device="cuda", init_k=50, beta_decay=beta_decay, divide_single=True, absorption_probability_slope=absoprtion_probability_slope,
                    R_decay = R_decay, R_init=R_init,
-                   R_upregulate = 0.1,
+                   R_upregulate = R_upregulate,
+                   hill_k=hill_k,
+                   hill_coefficient=hill_coefficient,
                    simulate_ligand_dilution=True,
+                   abs_probability_offset=abs_probability_offset,
                    bounding_radius_factor=bounding_radius_factor, contact_radius=contact_radius, ligand_step=ligand_step, selfnormalizing_absorption_probability=False)
 
 runner = sim.simulation(potential=potential,

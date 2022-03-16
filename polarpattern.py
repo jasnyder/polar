@@ -26,6 +26,9 @@ class PolarPattern(polarcore.PolarWNT):
                  absorption_probability_slope=1,
                  selfnormalizing_absorption_probability=False,
                  simulate_ligand_dilution=False,
+                 hill_coefficient = 8,
+                 hill_k = 0.55,
+                 abs_probability_offset = 0.001,
                  **kwargs):
         self.N_ligand = N_ligand
         self.ligand_step = ligand_step
@@ -40,6 +43,9 @@ class PolarPattern(polarcore.PolarWNT):
         self.R_decay = R_decay
         self.absorption_probability_slope = absorption_probability_slope
         self.selfnormalizing_absorption_probability = selfnormalizing_absorption_probability
+        self.hill_coefficient = hill_coefficient
+        self.hill_k = hill_k
+        self.abs_probability_offset = abs_probability_offset
         self.simulate_ligand_dilution = simulate_ligand_dilution
         self.get_bounding_sphere()
         self.initialize_ligand()
@@ -101,8 +107,8 @@ class PolarPattern(polarcore.PolarWNT):
         dx -= 2 * factor[:, None] * (self.ligand - self.bounding_sphere_center)
         return dx
 
-    def absorption_probability(self, R, mean=None, slope=None):
-        return torch.clamp(self.R, min = 0, max = 1)
+    def absorption_probability(self, R):
+        return (R**self.hill_coefficient)/(R**self.hill_coefficient + self.hill_k**self.hill_coefficient) + self.abs_probability_offset
 
     def absorption_probability_selfnormalizing(self, R, Rmax, Rmin, slope = None):
         if slope is None:
@@ -124,7 +130,7 @@ class PolarPattern(polarcore.PolarWNT):
             abs_probs = self.absorption_probability_selfnormalizing(
                 self.R, Rmax, Rmin)
         else:
-            abs_probs = self.absorption_probability(self.R, mean=Rmean)
+            abs_probs = self.absorption_probability(self.R)
 
         # generate random numbers to decide whether each particle gets absorbed by a cell
         rolls = torch.rand(idx.shape, device=self.device)
@@ -146,20 +152,24 @@ class PolarPattern(polarcore.PolarWNT):
         # zero out the dx for those newly created particles
         to_remove = idx[absorption_bools]
         dx[to_remove, :] = 0
-        new_pos = torch.rand((len(to_remove), 3), device = self.device, dtype=self.dtype)
+        new_pos = torch.randn((len(to_remove), 3), device = self.device, dtype=self.dtype)
         new_pos /= torch.norm(new_pos, dim=1, keepdim=True)
         self.ligand[to_remove] = new_pos * self.bounding_sphere_radius + self.bounding_sphere_center
         return dx
 
-    def absorb(self, particle_counts, hill_coefficient = 3, hill_k = 5):
+    def absorb(self, particle_counts):
         if self.simulate_ligand_dilution:
             factor = self.bounding_sphere_radius ** 3 / self.dilution_factor_basis
         else:
             factor = 1
-        RL = self.R * particle_counts
-        # dR = self.R_upregulate * (RL**hill_coefficient)/(RL**hill_coefficient + hill_k**hill_coefficient)
-        dR = (hill_k**hill_coefficient *hill_coefficient* RL**(-1 + hill_coefficient))/(hill_k**hill_coefficient + RL**hill_coefficient)**2
-        self.R += dR * factor - self.R * self.R_decay
+        def f(R):
+            return self.R_upregulate*(self.hill_k**self.hill_coefficient)/(R**self.hill_coefficient + self.hill_k**self.hill_coefficient)
+        particle_counts = (factor*particle_counts).int()
+        while (particle_counts>0).any():
+            to_apply = (particle_counts>0)
+            self.R[to_apply] += f(self.R[to_apply])
+            particle_counts -= 1
+        self.R -= (self.R - self.R_init) * self.R_decay
 
     def reflect(self, dx, indices):
         # find those ligand particles that would have touched cells, and reflect their dx vector through the plane perpendicular to AB polarity
@@ -263,17 +273,12 @@ class PolarPattern(polarcore.PolarWNT):
             self.get_gradient_vectors(better=better_WNT_gradient)
             self.gradient_step(tstep, potential=potential)
             if wnt_func_of_R:
-                Rmax = self.R.max()
-                Rmin = self.R.min()
-                center = (Rmin + Rmax)/2
-                denom = max(Rmax-Rmin, 1e-2)
-                slope = self.absorption_probability_slope or 2
-                self.w = (1+torch.tanh(2*slope*(self.R-center)/(denom)))/2
+                self.w = self.absorption_probability(self.R) - self.abs_probability_offset
             else:
                 self.w = self.w * np.exp(self.dt * self.wnt_decay)
             if beta_func_of_w:
                 self.beta = self.w.detach().clone() ** 1
-            self.R = self.R * np.exp(self.dt * self.R_decay)
+            # self.R = self.R * np.exp(self.dt * self.R_decay)
 
             # torch.cuda.empty_cache()
 
